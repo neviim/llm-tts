@@ -133,7 +133,7 @@ class TestProcessarBatch:
     def test_preprocessar_em_batch(self):
         textos = ["Dr. Silva", "50%"]
         chamadas = []
-        def fake_sintetizar(texto, engine, voz):
+        def fake_sintetizar(texto, engine, voz, idioma="pt"):
             chamadas.append(texto)
             return AUDIO_FAKE, SR_FAKE
 

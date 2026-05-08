@@ -8,6 +8,9 @@ Converte texto em voz com dois engines:
 Uso:
   python tts_ptbr.py "Texto"
   python tts_ptbr.py --engine pocket "Texto"
+  python tts_ptbr.py --engine pocket --idioma en "Hello world"
+  python tts_ptbr.py --velocidade 1.5 "Texto mais rápido"
+  python tts_ptbr.py --engine pocket --streaming "Texto com streaming"
   python tts_ptbr.py --salvar saida.wav "Texto"
   python tts_ptbr.py --salvar saida.flac --sample-rate 44100 "Texto"
   python tts_ptbr.py --salvar saida.wav --sem-reproduzir "Texto"
@@ -39,9 +42,47 @@ VOZES_EDGE = {
 }
 VOZ_EDGE_PADRAO = "francisca"
 
-# ── Vozes embutidas do engine pocket-tts ─────────────────────────────────────
+# ── Idiomas e vozes do engine pocket-tts ─────────────────────────────────────
+IDIOMAS_POCKET = {
+    "pt": "portuguese",
+    "en": "english",
+    "fr": "french_24l",
+    "de": "german_24l",
+    "it": "italian",
+    "es": "spanish_24l",
+}
+IDIOMA_POCKET_PADRAO = "pt"
+
+# Catálogo completo — kyutai/tts-voices + kyutai/pocket-tts
+# Disponibilidade por idioma depende dos embeddings no repositório HF.
+# Rafael é a única voz com embedding nativo para PT; demais funcionam melhor com EN.
 VOZES_POCKET = {
-    "rafael": "rafael",   # único com embeddings PT no modelo público
+    "rafael":         "rafael",           # PT (padrão)
+    "cosette":        "cosette",
+    "marius":         "marius",
+    "javert":         "javert",
+    "alba":           "alba",
+    "jean":           "jean",
+    "anna":           "anna",
+    "vera":           "vera",
+    "fantine":        "fantine",
+    "charles":        "charles",
+    "paul":           "paul",
+    "eponine":        "eponine",
+    "azelma":         "azelma",
+    "george":         "george",
+    "mary":           "mary",
+    "jane":           "jane",
+    "michael":        "michael",
+    "eve":            "eve",
+    "bill_boerst":    "bill_boerst",
+    "peter_yearsley": "peter_yearsley",
+    "stuart_bell":    "stuart_bell",
+    "caro_davy":      "caro_davy",
+    "estelle":        "estelle",          # FR
+    "giovanni":       "giovanni",         # IT
+    "lola":           "lola",             # ES
+    "juergen":        "juergen",          # DE
 }
 VOZ_POCKET_PADRAO = "rafael"
 
@@ -121,20 +162,13 @@ def _sub_numero(m: re.Match) -> str:
 
 def preprocessar_texto(texto: str) -> str:
     """Expande abreviações, moeda, porcentagem, ordinais, siglas e números."""
-    # Moeda antes dos números para evitar dupla substituição
     texto = re.sub(r'R\$\s*([\d.,]+)', _sub_moeda, texto)
-    # Porcentagem
     texto = re.sub(r'([\d.,]+)\s*%', _sub_percentual, texto)
-    # Ordinais: 1º 2ª 3°
     texto = re.sub(r'\b(\d+)\s*([°ºª])', _sub_ordinal, texto)
-    # Abreviações
     for padrao, sub in _ABREVIACOES:
         texto = re.sub(padrao, sub, texto)
-    # Siglas (2+ letras maiúsculas sem dígitos): TTS → T T S
     texto = re.sub(r'\b([A-Z]{2,})\b', lambda m: ' '.join(m.group(1)), texto)
-    # Números (inteiros e decimais PT-BR)
     texto = re.sub(r'\b\d{1,3}(?:\.\d{3})*(?:,\d+)?\b|\b\d+(?:,\d+)?\b', _sub_numero, texto)
-    # Normalizar espaços
     return re.sub(r'\s+', ' ', texto).strip()
 
 
@@ -162,7 +196,7 @@ def _sintetizar_edge(texto: str, nome_voz: str = VOZ_EDGE_PADRAO) -> tuple[np.nd
 # Engine: pocket-tts
 # ─────────────────────────────────────────────────────────────────────────────
 
-_pocket_model = None
+_pocket_models: dict[str, object] = {}
 _ENV_PATH = Path(__file__).parent / ".env"
 
 
@@ -209,19 +243,18 @@ def _aplicar_token(token: str) -> bool:
         return False
 
 
-def _carregar_pocket():
-    global _pocket_model
-    if _pocket_model is None:
-        # Aplica o token antes do load para que hf_hub_download consiga
-        # baixar os pesos com voice cloning do repositório gated.
+def _carregar_pocket(idioma: str = IDIOMA_POCKET_PADRAO):
+    global _pocket_models
+    if idioma not in _pocket_models:
+        lang_id = IDIOMAS_POCKET.get(idioma, idioma)
         token = _ler_token_env()
         if token:
             _aplicar_token(token)
         from pocket_tts import TTSModel
-        print("[pocket-tts] Carregando modelo português (primeira execução faz download)...")
-        _pocket_model = TTSModel.load_model(language="portuguese")
+        print(f"[pocket-tts] Carregando modelo '{idioma}' ({lang_id}) — primeira execução faz download...")
+        _pocket_models[idioma] = TTSModel.load_model(language=lang_id)
         print("[pocket-tts] Modelo pronto.")
-    return _pocket_model
+    return _pocket_models[idioma]
 
 
 _REPO_GATED = "kyutai/pocket-tts"
@@ -231,10 +264,6 @@ _ARQUIVO_TESTE_VC = ("languages/portuguese/model.safetensors",
 
 
 def _verificar_acesso_vc() -> tuple[bool, str]:
-    """
-    Tenta baixar o arquivo de pesos com voice cloning.
-    Retorna (tem_acesso, mensagem_de_erro).
-    """
     from huggingface_hub import hf_hub_download
     from huggingface_hub.errors import GatedRepoError
 
@@ -255,7 +284,7 @@ def _autenticar_hf() -> bool:
       2. Verifica acesso real ao arquivo de pesos.
       3. Se acesso negado (GatedRepoError), instrui o usuário a solicitar
          acesso na página do modelo e aguarda confirmação para retentar.
-      4. Se token ausente, oferece login interativo.
+      4. Se token ausente, oferece login interativo via `uvx hf auth login`.
     Retorna True quando o acesso ao repositório estiver confirmado.
     """
     import subprocess
@@ -263,7 +292,6 @@ def _autenticar_hf() -> bool:
     print()
     print("[pocket-tts] Clonagem de voz requer acesso ao repositório gated.")
 
-    # ── 1. Aplicar token se disponível ───────────────────────────────────────
     token = _ler_token_env()
     if token:
         origem = str(_ENV_PATH) if _ENV_PATH.exists() else "variável de ambiente"
@@ -285,7 +313,6 @@ def _autenticar_hf() -> bool:
         if subprocess.run(["uvx", "hf", "auth", "login"]).returncode != 0:
             return False
 
-    # ── 2. Verificar acesso real ao repositório ───────────────────────────────
     print("[pocket-tts] Verificando acesso ao repositório...")
     acesso, motivo = _verificar_acesso_vc()
 
@@ -301,7 +328,6 @@ def _autenticar_hf() -> bool:
         print("  3. O acesso costuma ser aprovado imediatamente.")
         print()
 
-        # Loop de retentativa até o acesso ser concedido ou o usuário desistir
         while True:
             try:
                 resp = input("Já solicitou o acesso? Retentar verificação? (s/N): ").strip().lower()
@@ -326,7 +352,7 @@ def _autenticar_hf() -> bool:
         return False
 
 
-def _resolver_voice_state(model, fonte_voz: str) -> dict:
+def _resolver_voice_state(model, fonte_voz: str, idioma: str = IDIOMA_POCKET_PADRAO) -> dict:
     p = Path(fonte_voz)
 
     if p.suffix == ".safetensors":
@@ -348,10 +374,9 @@ def _resolver_voice_state(model, fonte_voz: str) -> dict:
                     "  1. Aceite os termos em https://huggingface.co/kyutai/pocket-tts\n"
                     "  2. Execute: uvx hf auth login"
                 ) from e
-            # Recarrega o modelo para baixar os pesos com voice cloning
-            global _pocket_model
-            _pocket_model = None
-            novo_model = _carregar_pocket()
+            global _pocket_models
+            _pocket_models.pop(idioma, None)
+            novo_model = _carregar_pocket(idioma)
             return novo_model.get_state_for_audio_prompt(p, truncate=True)
 
     voz_id = VOZES_POCKET.get(fonte_voz, VOZ_POCKET_PADRAO)
@@ -360,27 +385,63 @@ def _resolver_voice_state(model, fonte_voz: str) -> dict:
     except ValueError as e:
         if "voice cloning" in str(e).lower():
             raise RuntimeError(
-                f"A voz '{fonte_voz}' não tem embeddings para o modelo português.\n"
-                "  Use 'rafael' ou forneça um arquivo .safetensors / .wav."
+                f"A voz '{fonte_voz}' não tem embeddings para o modelo '{idioma}'.\n"
+                "  Use 'rafael' para PT, ou mude de idioma com --idioma en."
+            ) from e
+        raise
+    except Exception as e:
+        msg = str(e).lower()
+        if "not found" in msg or "404" in msg or "entrynotfound" in msg:
+            raise RuntimeError(
+                f"Voz '{fonte_voz}' não disponível para o idioma '{idioma}'.\n"
+                f"  Tente --idioma en para acesso ao catálogo completo."
             ) from e
         raise
 
 
-def _sintetizar_pocket(texto: str, fonte_voz: str = VOZ_POCKET_PADRAO) -> tuple[np.ndarray, int]:
-    model = _carregar_pocket()
-    voice_state = _resolver_voice_state(model, fonte_voz)
+def _sintetizar_pocket(
+    texto: str,
+    fonte_voz: str = VOZ_POCKET_PADRAO,
+    idioma: str = IDIOMA_POCKET_PADRAO,
+) -> tuple[np.ndarray, int]:
+    model = _carregar_pocket(idioma)
+    voice_state = _resolver_voice_state(model, fonte_voz, idioma)
     audio_tensor = model.generate_audio(voice_state, texto)
     return audio_tensor.numpy(), model.sample_rate
 
 
-def exportar_voz_pocket(fonte_voz: str, destino: str) -> None:
+def _sintetizar_pocket_stream(
+    texto: str,
+    fonte_voz: str = VOZ_POCKET_PADRAO,
+    idioma: str = IDIOMA_POCKET_PADRAO,
+) -> tuple[np.ndarray, int]:
+    """Gera e reproduz áudio em tempo real via streaming. Retorna (array_completo, sr)."""
+    model = _carregar_pocket(idioma)
+    voice_state = _resolver_voice_state(model, fonte_voz, idioma)
+    sr = model.sample_rate
+    chunks: list[np.ndarray] = []
+
+    with sd.OutputStream(samplerate=sr, channels=1, dtype="float32") as stream:
+        for chunk in model.generate_audio_stream(voice_state, texto):
+            data = chunk.numpy().astype(np.float32)
+            stream.write(data.reshape(-1, 1))
+            chunks.append(data)
+
+    return (np.concatenate(chunks) if chunks else np.array([], dtype=np.float32)), sr
+
+
+def exportar_voz_pocket(
+    fonte_voz: str,
+    destino: str,
+    idioma: str = IDIOMA_POCKET_PADRAO,
+) -> None:
     from pocket_tts.models.tts_model import export_model_state
     destino_path = Path(destino)
     if destino_path.suffix != ".safetensors":
         destino_path = destino_path.with_suffix(".safetensors")
-    model = _carregar_pocket()
+    model = _carregar_pocket(idioma)
     print(f"[pocket-tts] Processando voz: {fonte_voz}")
-    voice_state = _resolver_voice_state(model, fonte_voz)
+    voice_state = _resolver_voice_state(model, fonte_voz, idioma)
     export_model_state(voice_state, destino_path)
     print(f"[pocket-tts] Voz exportada: {destino_path}")
     print(f"[pocket-tts] Use com: --voz {destino_path}")
@@ -396,6 +457,16 @@ def _resample(data: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
     n_samples = round(len(data) * target_sr / orig_sr)
     resampled = scipy_resample(data, n_samples)
     return resampled.astype(data.dtype)
+
+
+def _aplicar_velocidade(data: np.ndarray, velocidade: float) -> np.ndarray:
+    """Altera velocidade via resampling. Nota: modifica o pitch proporcionalmente."""
+    if velocidade == 1.0:
+        return data
+    n_target = round(len(data) / velocidade)
+    if n_target <= 0:
+        return data
+    return scipy_resample(data, n_target).astype(data.dtype)
 
 
 def _inferir_formato(caminho: str, formato_explicito: str | None) -> str:
@@ -415,10 +486,14 @@ def _processar_saida(
     salvar: str | None = None,
     formato: str | None = None,
     sample_rate_saida: int | None = None,
+    velocidade: float = 1.0,
     reproduzir: bool = True,
 ) -> None:
     sr_saida = sample_rate_saida or samplerate
     data_saida = _resample(data, samplerate, sr_saida) if sr_saida != samplerate else data
+
+    if velocidade != 1.0:
+        data_saida = _aplicar_velocidade(data_saida, velocidade)
 
     if salvar:
         fmt = _inferir_formato(salvar, formato)
@@ -440,9 +515,14 @@ def _processar_saida(
 # Batch e utilitários de saída
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _sintetizar(texto: str, engine: str, fonte_voz: str) -> tuple[np.ndarray, int]:
+def _sintetizar(
+    texto: str,
+    engine: str,
+    fonte_voz: str,
+    idioma: str = IDIOMA_POCKET_PADRAO,
+) -> tuple[np.ndarray, int]:
     if engine == "pocket":
-        return _sintetizar_pocket(texto, fonte_voz)
+        return _sintetizar_pocket(texto, fonte_voz, idioma)
     return _sintetizar_edge(texto, fonte_voz)
 
 
@@ -471,36 +551,41 @@ def processar_batch(
     engine: str,
     fonte_voz: str,
     *,
+    idioma: str = IDIOMA_POCKET_PADRAO,
     preprocessar: bool = False,
     salvar: str | None = None,
     formato: str | None = None,
     sample_rate_saida: int | None = None,
+    velocidade: float = 1.0,
     reproduzir: bool = True,
     juntar: bool = False,
 ) -> None:
     if preprocessar:
         textos = [preprocessar_texto(t) for t in textos]
 
+    saida_kw = dict(
+        formato=formato,
+        sample_rate_saida=sample_rate_saida,
+        velocidade=velocidade,
+        reproduzir=reproduzir,
+    )
+
     if juntar:
         print(f"[batch] {len(textos)} linha(s) — gerando e juntando...")
         segmentos = []
         for i, texto in enumerate(textos, 1):
             print(f"  [{i}/{len(textos)}] {texto[:60]}{'...' if len(texto) > 60 else ''}")
-            segmentos.append(_sintetizar(texto, engine, fonte_voz))
+            segmentos.append(_sintetizar(texto, engine, fonte_voz, idioma))
         data, sr = _concatenar_audio(segmentos)
-        _processar_saida(data, sr,
-                         salvar=salvar, formato=formato,
-                         sample_rate_saida=sample_rate_saida, reproduzir=reproduzir)
+        _processar_saida(data, sr, salvar=salvar, **saida_kw)
         return
 
     for i, texto in enumerate(textos, 1):
         prefixo = f"[{i}/{len(textos)}]" if len(textos) > 1 else f"[{engine}]"
         print(f"{prefixo} {texto[:70]}{'...' if len(texto) > 70 else ''}")
         destino = _nome_numerado(salvar, i, len(textos)) if salvar and len(textos) > 1 else salvar
-        data, sr = _sintetizar(texto, engine, fonte_voz)
-        _processar_saida(data, sr,
-                         salvar=destino, formato=formato,
-                         sample_rate_saida=sample_rate_saida, reproduzir=reproduzir)
+        data, sr = _sintetizar(texto, engine, fonte_voz, idioma)
+        _processar_saida(data, sr, salvar=destino, **saida_kw)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -512,18 +597,34 @@ def falar(
     engine: str,
     fonte_voz: str,
     *,
+    idioma: str = IDIOMA_POCKET_PADRAO,
     preprocessar: bool = False,
     salvar: str | None = None,
     formato: str | None = None,
     sample_rate_saida: int | None = None,
+    velocidade: float = 1.0,
     reproduzir: bool = True,
+    streaming: bool = False,
 ) -> None:
     if preprocessar:
         texto = preprocessar_texto(texto)
-    data, sr = _sintetizar(texto, engine, fonte_voz)
-    _processar_saida(data, sr,
-                     salvar=salvar, formato=formato,
-                     sample_rate_saida=sample_rate_saida, reproduzir=reproduzir)
+
+    saida_kw = dict(
+        salvar=salvar,
+        formato=formato,
+        sample_rate_saida=sample_rate_saida,
+        velocidade=velocidade,
+    )
+
+    if engine == "pocket" and streaming and reproduzir:
+        # Streaming: reproduz em tempo real; salva o áudio completo ao final se pedido
+        data, sr = _sintetizar_pocket_stream(texto, fonte_voz, idioma)
+        if salvar or velocidade != 1.0 or sample_rate_saida:
+            _processar_saida(data, sr, reproduzir=False, **saida_kw)
+        return
+
+    data, sr = _sintetizar(texto, engine, fonte_voz, idioma)
+    _processar_saida(data, sr, reproduzir=reproduzir, **saida_kw)
 
 
 def _vozes_para_engine(engine: str) -> dict:
@@ -547,6 +648,15 @@ exemplos:
   Falar e salvar em WAV:
     python tts_ptbr.py --salvar saida.wav "Olá, mundo!"
 
+  Falar 1,5× mais rápido:
+    python tts_ptbr.py --velocidade 1.5 "Texto mais rápido"
+
+  Pocket TTS em inglês com voz alba:
+    python tts_ptbr.py --engine pocket --idioma en --voz alba "Hello world"
+
+  Pocket TTS com streaming em tempo real:
+    python tts_ptbr.py --engine pocket --streaming "Texto aqui"
+
   Pré-processar texto antes de falar:
     python tts_ptbr.py --preprocessar "R$ 1.250,00 — 3º lugar, Dr. Silva"
 
@@ -560,9 +670,6 @@ exemplos:
     echo "Olá mundo" | python tts_ptbr.py
     cat frases.txt | python tts_ptbr.py --salvar saida.wav --juntar
 
-  Pocket TTS + salvar em OGG:
-    python tts_ptbr.py --engine pocket --salvar saida.ogg "Texto"
-
   Exportar voice state para reuso:
     python tts_ptbr.py --engine pocket --clonar-voz minha_voz.wav --exportar-voz minha_voz.safetensors
         """,
@@ -573,6 +680,13 @@ exemplos:
         choices=["edge", "pocket"],
         default="edge",
         help="Engine TTS: 'edge' (online, padrão) ou 'pocket' (local/neural)",
+    )
+    parser.add_argument(
+        "--idioma",
+        choices=list(IDIOMAS_POCKET.keys()),
+        default=IDIOMA_POCKET_PADRAO,
+        metavar="LANG",
+        help=f"[pocket] Idioma do modelo: {', '.join(IDIOMAS_POCKET.keys())} (padrão: pt)",
     )
     parser.add_argument(
         "--voz", "-v",
@@ -612,9 +726,21 @@ exemplos:
         help="Taxa de amostragem do arquivo de saída em Hz (ex: 44100, 48000)",
     )
     parser.add_argument(
+        "--velocidade",
+        metavar="N",
+        type=float,
+        default=1.0,
+        help="Velocidade de fala: 0.5 (lento) a 2.0 (rápido), padrão 1.0",
+    )
+    parser.add_argument(
         "--sem-reproduzir",
         action="store_true",
         help="Salva o áudio sem reproduzir (requer --salvar)",
+    )
+    parser.add_argument(
+        "--streaming",
+        action="store_true",
+        help="[pocket] Reproduz áudio em tempo real enquanto gera (menor latência)",
     )
     parser.add_argument(
         "--arquivo",
@@ -642,6 +768,8 @@ exemplos:
         parser.error("--sem-reproduzir requer --salvar")
     if args.juntar and not args.salvar:
         parser.error("--juntar requer --salvar")
+    if args.velocidade <= 0:
+        parser.error("--velocidade deve ser maior que 0")
 
     # ── Listar vozes ─────────────────────────────────────────────────────────
     if args.listar_vozes:
@@ -650,9 +778,12 @@ exemplos:
         print(f"Vozes embutidas — engine: {args.engine}")
         for nome, voz_id in vozes.items():
             padrao = " (padrão)" if nome == voz_pad else ""
-            print(f"  {nome:<14} → {voz_id}{padrao}")
+            print(f"  {nome:<16} → {voz_id}{padrao}")
         if args.engine == "pocket":
-            print("  (também aceita: arquivo.safetensors, arquivo.wav com login HF)")
+            print()
+            print("  Nota: rafael tem embedding nativo para PT.")
+            print("  Demais vozes funcionam melhor com --idioma en.")
+            print("  Qualquer voz aceita arquivo.safetensors ou arquivo.wav com login HF.")
         return
 
     # ── Parâmetros de saída de áudio ─────────────────────────────────────────
@@ -660,9 +791,15 @@ exemplos:
         salvar=args.salvar,
         formato=args.formato,
         sample_rate_saida=args.sample_rate,
+        velocidade=args.velocidade,
         reproduzir=not args.sem_reproduzir,
     )
-    saida_batch = dict(**saida, preprocessar=args.preprocessar, juntar=args.juntar)
+    saida_batch = dict(
+        **saida,
+        idioma=args.idioma,
+        preprocessar=args.preprocessar,
+        juntar=args.juntar,
+    )
 
     # ── Determinar fonte de voz ───────────────────────────────────────────────
     if args.engine == "pocket":
@@ -673,7 +810,7 @@ exemplos:
 
     # ── Apenas exportar voz (sem texto) ──────────────────────────────────────
     if args.engine == "pocket" and args.exportar_voz and not args.texto and not args.arquivo:
-        exportar_voz_pocket(fonte_voz, args.exportar_voz)
+        exportar_voz_pocket(fonte_voz, args.exportar_voz, args.idioma)
         return
 
     # ── Coletar textos de arquivo ou stdin ────────────────────────────────────
@@ -681,7 +818,7 @@ exemplos:
         textos = _ler_textos_arquivo(args.arquivo)
         processar_batch(textos, args.engine, fonte_voz, **saida_batch)
         if args.engine == "pocket" and args.exportar_voz:
-            exportar_voz_pocket(fonte_voz, args.exportar_voz)
+            exportar_voz_pocket(fonte_voz, args.exportar_voz, args.idioma)
         return
 
     if not args.texto and not sys.stdin.isatty():
@@ -694,24 +831,40 @@ exemplos:
     if args.texto:
         texto = " ".join(args.texto)
         print(f"[{args.engine}] {texto}")
-        falar(texto, args.engine, fonte_voz, preprocessar=args.preprocessar, **saida)
+        falar(
+            texto, args.engine, fonte_voz,
+            idioma=args.idioma,
+            preprocessar=args.preprocessar,
+            streaming=args.streaming,
+            **saida,
+        )
         if args.engine == "pocket" and args.exportar_voz:
-            exportar_voz_pocket(fonte_voz, args.exportar_voz)
+            exportar_voz_pocket(fonte_voz, args.exportar_voz, args.idioma)
         return
 
     # ── Modo interativo ───────────────────────────────────────────────────────
     engine_atual = args.engine
+    idioma_atual = args.idioma
     voz_atual = fonte_voz
     salvar_atual: str | None = args.salvar
     formato_atual: str | None = args.formato
     sr_atual: int | None = args.sample_rate
+    velocidade_atual: float = args.velocidade
     reproduzir_atual: bool = not args.sem_reproduzir
     preprocessar_atual: bool = args.preprocessar
+    streaming_atual: bool = args.streaming
 
     def _status():
-        partes = [f"engine: {engine_atual}", f"voz: {voz_atual}"]
+        partes = [f"engine: {engine_atual}"]
+        if engine_atual == "pocket":
+            partes.append(f"idioma: {idioma_atual}")
+        partes.append(f"voz: {voz_atual}")
+        if velocidade_atual != 1.0:
+            partes.append(f"velocidade: {velocidade_atual}x")
         if preprocessar_atual:
             partes.append("preprocessar: on")
+        if streaming_atual and engine_atual == "pocket":
+            partes.append("streaming: on")
         if salvar_atual:
             partes.append(f"salvar: {salvar_atual}")
         if formato_atual:
@@ -722,9 +875,10 @@ exemplos:
             partes.append("sem-reproduzir")
         return "  ".join(partes)
 
-    print(f"TTS Português BR — modo interativo")
+    print("TTS Português BR — modo interativo")
     print(_status())
-    print("Comandos: 'voz', 'engine', 'preprocessar', 'salvar', 'formato', 'sample-rate', 'sem-reproduzir', 'exportar', 'clonar', 'status', 'sair'")
+    print("Comandos: engine, idioma, voz, velocidade, preprocessar, streaming, salvar,")
+    print("          formato, sample-rate, sem-reproduzir, exportar, clonar, status, sair")
     print()
 
     while True:
@@ -759,6 +913,14 @@ exemplos:
                 print("Use: engine edge  ou  engine pocket")
             continue
 
+        if cmd == "idioma":
+            if arg in IDIOMAS_POCKET:
+                idioma_atual = arg
+                print(_status())
+            else:
+                print(f"Idiomas disponíveis: {', '.join(IDIOMAS_POCKET.keys())}")
+            continue
+
         if cmd == "voz":
             if not arg:
                 print(f"Voz atual: {voz_atual}")
@@ -774,6 +936,31 @@ exemplos:
             print(_status())
             continue
 
+        if cmd == "velocidade":
+            if arg.lower() == "off" or arg == "1" or arg == "1.0":
+                velocidade_atual = 1.0
+            else:
+                try:
+                    v = float(arg)
+                    if v <= 0:
+                        raise ValueError
+                    velocidade_atual = v
+                except ValueError:
+                    print("Use: velocidade 1.5  (0.5 = lento, 2.0 = rápido)  ou  velocidade off")
+                    continue
+            print(_status())
+            continue
+
+        if cmd == "streaming":
+            if engine_atual != "pocket":
+                print("Streaming só disponível com engine pocket.")
+                continue
+            streaming_atual = not streaming_atual
+            estado = "ativado" if streaming_atual else "desativado"
+            print(f"Streaming {estado}.")
+            print(_status())
+            continue
+
         if cmd == "clonar" and engine_atual == "pocket":
             voz_atual = arg
             print(f"Voz de clonagem: {voz_atual}")
@@ -781,7 +968,7 @@ exemplos:
 
         if cmd == "exportar" and engine_atual == "pocket":
             try:
-                exportar_voz_pocket(voz_atual, arg)
+                exportar_voz_pocket(voz_atual, arg, idioma_atual)
             except (RuntimeError, FileNotFoundError) as e:
                 print(f"[erro] {e}")
             continue
@@ -842,11 +1029,14 @@ exemplos:
             print("[falando...]")
             falar(
                 entrada, engine_atual, voz_atual,
+                idioma=idioma_atual,
                 preprocessar=preprocessar_atual,
                 salvar=salvar_atual,
                 formato=formato_atual,
                 sample_rate_saida=sr_atual,
+                velocidade=velocidade_atual,
                 reproduzir=reproduzir_atual,
+                streaming=streaming_atual,
             )
         except (RuntimeError, FileNotFoundError, ValueError) as e:
             print(f"[erro] {e}")
