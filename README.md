@@ -193,6 +193,26 @@ Comandos disponíveis:
 
 ---
 
+## Referência de argumentos
+
+| Argumento              | Atalho | Descrição                                                       |
+|------------------------|--------|-----------------------------------------------------------------|
+| `texto`                |        | Texto a converter (posicional, opcional)                        |
+| `--engine`             | `-e`   | Engine TTS: `edge` (padrão) ou `pocket`                         |
+| `--voz`                | `-v`   | Voz: nome embutido, caminho `.safetensors` ou `.wav` (pocket)   |
+| `--clonar-voz ARQUIVO` |        | [pocket] Áudio de referência para clonagem de voz               |
+| `--exportar-voz DEST`  |        | [pocket] Exporta voice state para `.safetensors`                |
+| `--salvar ARQUIVO`     |        | Salva o áudio gerado (`.wav`, `.flac`, `.ogg`, `.mp3`)          |
+| `--formato FMT`        |        | Formato de saída explícito (padrão: inferido pela extensão)     |
+| `--sample-rate HZ`     |        | Taxa de amostragem do arquivo de saída em Hz                    |
+| `--sem-reproduzir`     |        | Salva sem reproduzir — requer `--salvar`                        |
+| `--arquivo TXT`        |        | Arquivo de texto com uma frase por linha                        |
+| `--preprocessar`       | `-p`   | Expande abreviações, moeda, ordinais, siglas e números (PT-BR)  |
+| `--juntar`             |        | Concatena todas as frases num único áudio — requer `--salvar`   |
+| `--listar-vozes`       |        | Lista vozes embutidas do engine selecionado                     |
+
+---
+
 ## Vozes disponíveis
 
 ### Engine `edge` (Microsoft Edge TTS)
@@ -250,7 +270,7 @@ llm-tts/
 | `edge-tts`    | Engine online — vozes neurais Microsoft pt-BR |
 | `pocket-tts`  | Engine local — modelo neural Kyutai (~500MB)  |
 | `sounddevice` | Reprodução de áudio via hardware              |
-| `soundfile`   | Decodificação de áudio MP3/WAV                |
+| `soundfile`   | Leitura e escrita de áudio WAV/FLAC/OGG/MP3   |
 | `safetensors` | Importação/exportação de voice states         |
 | `scipy`       | Resampling de áudio (`--sample-rate`)         |
 | `num2words`   | Conversão de números para PT-BR (`--preprocessar`) |
@@ -275,7 +295,6 @@ llm-tts/
 |---|---|
 | Histórico de áudio | Cache dos últimos N áudios gerados para não re-sintetizar textos repetidos |
 | Leitura do clipboard | Falar o conteúdo copiado (`--clipboard`) |
-| Processamento em lote | Converter uma lista de frases em arquivos numerados automaticamente |
 | Fila de frases | Enfileirar múltiplas entradas no modo interativo sem esperar cada reprodução |
 
 ### Interface
