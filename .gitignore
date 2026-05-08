@@ -1,7 +1,54 @@
+# ── Credenciais e configuração local ─────────────────────────────────────────
 .env
+.env.local
+
+# ── Ambiente virtual ──────────────────────────────────────────────────────────
 .venv/
+venv/
+env/
+
+# ── Áudios gerados ────────────────────────────────────────────────────────────
 output/
+*.wav
+*.mp3
+*.flac
+*.ogg
+
+# ── Voice states exportados ───────────────────────────────────────────────────
+*.safetensors
+vozes/
+
+# ── Modelos e cache do HuggingFace ────────────────────────────────────────────
+.cache/
+huggingface/
+
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
-*.pyc
-vozes/*.safetensors
-referencia
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Testes ────────────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Claude Code ───────────────────────────────────────────────────────────────
+.claude/
+
+# ── Referências e rascunhos locais ────────────────────────────────────────────
+referencia/
+
+# ── Editores ─────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*~
+
+# ── Sistema operacional ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
