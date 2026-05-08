@@ -116,9 +116,59 @@ cat frases.txt | .venv/bin/python tts_ptbr.py --salvar saida.wav --juntar
 ### Escolher voz embutida
 
 ```bash
+# edge — 3 vozes nativas PT-BR
 .venv/bin/python tts_ptbr.py --voz antonio "Boa tarde!"
+.venv/bin/python tts_ptbr.py --voz thalita "Olá!"
+
+# pocket — 26 vozes (rafael tem embedding PT nativo; demais funcionam melhor com --idioma en)
 .venv/bin/python tts_ptbr.py --engine pocket --voz rafael "Olá!"
+.venv/bin/python tts_ptbr.py --engine pocket --voz alba --idioma en "Hello world"
+.venv/bin/python tts_ptbr.py --engine pocket --listar-vozes
 ```
+
+### Idiomas — pocket TTS (`--idioma`)
+
+O modelo Kyutai suporta 6 idiomas. Troca o modelo carregado (cada idioma é baixado uma vez).
+
+```bash
+.venv/bin/python tts_ptbr.py --engine pocket --idioma pt "Olá, mundo!"         # Português (padrão)
+.venv/bin/python tts_ptbr.py --engine pocket --idioma en --voz george "Hello!"  # Inglês
+.venv/bin/python tts_ptbr.py --engine pocket --idioma fr --voz fantine "Bonjour!"  # Francês
+.venv/bin/python tts_ptbr.py --engine pocket --idioma de --voz juergen "Guten Tag!"  # Alemão
+.venv/bin/python tts_ptbr.py --engine pocket --idioma it --voz giovanni "Ciao!"  # Italiano
+.venv/bin/python tts_ptbr.py --engine pocket --idioma es --voz lola "¡Hola!"    # Espanhol
+```
+
+| Código | Idioma    | Vozes recomendadas                      |
+|--------|-----------|-----------------------------------------|
+| `pt`   | Português | `rafael`                                |
+| `en`   | Inglês    | `george`, `mary`, `anna`, `alba`, `eve` |
+| `fr`   | Francês   | `cosette`, `marius`, `fantine`, `jean`  |
+| `de`   | Alemão    | `juergen`, `caro_davy`                  |
+| `it`   | Italiano  | `giovanni`, `estelle`                   |
+| `es`   | Espanhol  | `lola`                                  |
+
+### Velocidade de fala (`--velocidade`)
+
+Controla a velocidade por resampling (afeta pitch proporcionalmente). Funciona com qualquer engine.
+
+```bash
+.venv/bin/python tts_ptbr.py --velocidade 0.75 "Fala devagar"   # 25% mais lento
+.venv/bin/python tts_ptbr.py --velocidade 1.5  "Fala rápido"    # 50% mais rápido
+.venv/bin/python tts_ptbr.py --velocidade 2.0  "Bem rápido"     # 2× velocidade
+.venv/bin/python tts_ptbr.py --engine pocket --velocidade 1.2 --salvar saida.wav "Texto"
+```
+
+### Streaming em tempo real (`--streaming`)
+
+Reproduz o áudio enquanto gera — menor latência em textos longos. Exclusivo do engine `pocket`.
+
+```bash
+.venv/bin/python tts_ptbr.py --engine pocket --streaming "Texto longo aqui..."
+.venv/bin/python tts_ptbr.py --engine pocket --streaming --voz alba --idioma en "Long text here"
+```
+
+> Não compatível com `--salvar` (o streaming é reprodução apenas).
 
 ### Clonagem de voz (pocket)
 
