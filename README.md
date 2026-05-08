@@ -180,6 +180,9 @@ Comandos disponíveis:
 | `formato off`                    | Volta a inferir formato pela extensão             |
 | `sample-rate <Hz>`               | Define taxa de amostragem do arquivo (ex: 44100)  |
 | `sample-rate off`                | Usa o sample rate nativo do engine               |
+| `idioma <pt\|en\|fr\|de\|it\|es>` | [pocket] Troca o idioma do modelo em tempo real  |
+| `velocidade <N>`                 | Velocidade de fala (0.1–4.0, padrão 1.0)          |
+| `streaming [on\|off]`            | [pocket] Ativa/desativa reprodução em streaming   |
 | `sem-reproduzir`                 | Alterna entre salvar-e-reproduzir / só salvar     |
 | `status`                         | Mostra configuração atual                         |
 | `sair`                           | Encerra o programa                                |
@@ -207,6 +210,9 @@ Comandos disponíveis:
 | `--sample-rate HZ`     |        | Taxa de amostragem do arquivo de saída em Hz                    |
 | `--sem-reproduzir`     |        | Salva sem reproduzir — requer `--salvar`                        |
 | `--arquivo TXT`        |        | Arquivo de texto com uma frase por linha                        |
+| `--idioma LANG`        |        | [pocket] Idioma do modelo: `pt` (padrão), `en`, `fr`, `de`, `it`, `es` |
+| `--velocidade N`       |        | Velocidade de fala (0.1–4.0, padrão 1.0)                        |
+| `--streaming`          |        | [pocket] Reproduz em tempo real enquanto gera                   |
 | `--preprocessar`       | `-p`   | Expande abreviações, moeda, ordinais, siglas e números (PT-BR)  |
 | `--juntar`             |        | Concatena todas as frases num único áudio — requer `--salvar`   |
 | `--listar-vozes`       |        | Lista vozes embutidas do engine selecionado                     |
@@ -225,11 +231,21 @@ Comandos disponíveis:
 
 ### Engine `pocket` (Kyutai Pocket TTS)
 
-| Fonte de voz              | Descrição                                | Login HF |
-|---------------------------|------------------------------------------|----------|
-| `rafael` (padrão)         | Voz masculina portuguesa embutida        | Não      |
-| `minha_voz.safetensors`   | Voz exportada previamente                | Não      |
-| `minha_voz.wav`           | Clonagem direta do arquivo de áudio      | Sim      |
+26 vozes disponíveis. `rafael` tem embedding nativo para PT; as demais funcionam melhor com `--idioma en`.
+
+| Nome          | Gênero   | Login HF |
+|---------------|----------|----------|
+| `rafael` (padrão) | Masculino | Não  |
+| `cosette`     | Feminino  | Sim      |
+| `marius`      | Masculino | Sim      |
+| `alba`        | Feminino  | Sim      |
+| `anna`        | Feminino  | Sim      |
+| `george`      | Masculino | Sim      |
+| `mary`        | Feminino  | Sim      |
+| … +18 vozes   | —         | Sim      |
+
+Voz exportada previamente: `minha_voz.safetensors` (sem login)  
+Clonagem direta: `minha_voz.wav` (requer login HF)
 
 ---
 
@@ -254,6 +270,14 @@ llm-tts/
 ├── .venv/                   # ambiente virtual Python
 ├── output/                  # áudios gerados (criado automaticamente)
 ├── vozes/                   # (opcional) pasta para .safetensors exportados
+├── server/
+│   ├── __init__.py
+│   └── server.py            # API REST (FastAPI)
+├── tests/
+│   ├── test_cli.py
+│   ├── test_preprocessamento.py
+│   ├── test_server.py
+│   └── test_utils.py
 ├── .env                     # token HuggingFace — NÃO versionar
 ├── .env.example             # modelo de configuração
 ├── .gitignore
@@ -272,22 +296,51 @@ llm-tts/
 | `sounddevice` | Reprodução de áudio via hardware              |
 | `soundfile`   | Leitura e escrita de áudio WAV/FLAC/OGG/MP3   |
 | `safetensors` | Importação/exportação de voice states         |
-| `scipy`       | Resampling de áudio (`--sample-rate`)         |
+| `scipy`       | Resampling de áudio (`--sample-rate`, `--velocidade`) |
 | `num2words`   | Conversão de números para PT-BR (`--preprocessar`) |
+| `fastapi`     | Servidor REST (opcional)                      |
+| `uvicorn`     | Servidor ASGI para a API REST (opcional)      |
+
+---
+
+## Servidor REST
+
+Inicia uma API HTTP que expõe todos os recursos do `tts_ptbr.py`:
+
+```bash
+.venv/bin/uvicorn server.server:app --host 0.0.0.0 --port 8080 --reload
+```
+
+Documentação interativa disponível em `http://localhost:8080/docs`.
+
+### Endpoints
+
+| Método | Rota           | Descrição                                  |
+|--------|----------------|--------------------------------------------|
+| GET    | `/health`      | Status do servidor                         |
+| GET    | `/vozes`       | Lista vozes (`?engine=edge` ou `pocket`)   |
+| GET    | `/idiomas`     | Lista idiomas disponíveis (pocket)         |
+| POST   | `/preprocessar`| Aplica pré-processamento PT-BR ao texto    |
+| POST   | `/tts`         | Sintetiza e retorna áudio (WAV/FLAC/OGG/MP3) |
+
+### Exemplo
+
+```bash
+curl -s -X POST http://localhost:8080/tts \
+  -H "Content-Type: application/json" \
+  -d '{"texto": "Olá, mundo!", "engine": "edge", "formato": "mp3"}' \
+  --output saida.mp3
+
+# Pocket TTS com velocidade e idioma
+curl -s -X POST http://localhost:8080/tts \
+  -H "Content-Type: application/json" \
+  -d '{"texto": "Hello world", "engine": "pocket", "idioma": "en", "voz": "george", "velocidade": 1.2}' \
+  --output saida.wav
+```
 
 ---
 
 ## Roadmap — o que pode ser implementado
-
-### Engine pocket-tts
-
-| Funcionalidade | Descrição |
-|---|---|
-| Catálogo completo de vozes | Com login HF desbloqueiam-se ~25 vozes (`alba`, `anna`, `cosette`, etc.) |
-| Outros idiomas | O modelo já suporta espanhol, francês, alemão, italiano — basta trocar `language=` |
-| `--velocidade <0.5–2.0>` | Controle de velocidade de fala |
-| Streaming de áudio | Reproduzir enquanto gera (latência menor) via `generate_audio_stream` |
-| Modo servidor | Subir a API REST local do pocket-tts (`pocket-tts serve`) integrada ao script |
 
 ### Produtividade
 
