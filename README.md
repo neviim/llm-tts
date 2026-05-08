@@ -113,6 +113,46 @@ echo "Olá, mundo!" | .venv/bin/python tts_ptbr.py
 cat frases.txt | .venv/bin/python tts_ptbr.py --salvar saida.wav --juntar
 ```
 
+### Falar o texto do clipboard (`--clipboard`)
+
+```bash
+# Fala o que está copiado com as configurações atuais
+.venv/bin/python tts_ptbr.py --clipboard
+
+# Combinado com qualquer flag
+.venv/bin/python tts_ptbr.py --clipboard --engine pocket --voz george --idioma en
+.venv/bin/python tts_ptbr.py --clipboard --velocidade 1.3 --salvar saida.wav
+```
+
+No modo interativo, o comando `clipboard` lê e fala o conteúdo copiado com as configurações da sessão.
+
+### Configuração padrão (`config.yaml`)
+
+Salva as preferências atuais para não precisar repetir flags a cada execução:
+
+```bash
+# Define pocket + inglês + voz george como padrões
+.venv/bin/python tts_ptbr.py --engine pocket --idioma en --voz george --salvar-config
+
+# A partir daí, basta:
+.venv/bin/python tts_ptbr.py "Hello world"
+```
+
+O arquivo `config.yaml` é criado na pasta do projeto. Campos suportados:
+
+```yaml
+engine: pocket
+idioma: en
+voz: george
+velocidade: 1.2
+streaming: false
+preprocessar: false
+formato: wav
+sample_rate: 44100
+```
+
+No modo interativo, use `config salvar` para persistir as configurações da sessão e `config ver` para inspecionar o arquivo atual.
+
 ### Escolher voz embutida
 
 ```bash
@@ -233,6 +273,9 @@ Comandos disponíveis:
 | `idioma <pt\|en\|fr\|de\|it\|es>` | [pocket] Troca o idioma do modelo em tempo real  |
 | `velocidade <N>`                 | Velocidade de fala (0.1–4.0, padrão 1.0)          |
 | `streaming [on\|off]`            | [pocket] Ativa/desativa reprodução em streaming   |
+| `clipboard`                      | Lê e fala o conteúdo do clipboard                 |
+| `config salvar`                  | Persiste as configurações da sessão em config.yaml |
+| `config ver`                     | Exibe o conteúdo atual do config.yaml             |
 | `sem-reproduzir`                 | Alterna entre salvar-e-reproduzir / só salvar     |
 | `status`                         | Mostra configuração atual                         |
 | `sair`                           | Encerra o programa                                |
@@ -263,6 +306,8 @@ Comandos disponíveis:
 | `--idioma LANG`        |        | [pocket] Idioma do modelo: `pt` (padrão), `en`, `fr`, `de`, `it`, `es` |
 | `--velocidade N`       |        | Velocidade de fala (0.1–4.0, padrão 1.0)                        |
 | `--streaming`          |        | [pocket] Reproduz em tempo real enquanto gera                   |
+| `--clipboard`          |        | Lê o texto do clipboard em vez de argumento ou stdin            |
+| `--salvar-config`      |        | Persiste os parâmetros atuais em `config.yaml` e sai            |
 | `--preprocessar`       | `-p`   | Expande abreviações, moeda, ordinais, siglas e números (PT-BR)  |
 | `--juntar`             |        | Concatena todas as frases num único áudio — requer `--salvar`   |
 | `--listar-vozes`       |        | Lista vozes embutidas do engine selecionado                     |
@@ -348,6 +393,8 @@ llm-tts/
 | `safetensors` | Importação/exportação de voice states         |
 | `scipy`       | Resampling de áudio (`--sample-rate`, `--velocidade`) |
 | `num2words`   | Conversão de números para PT-BR (`--preprocessar`) |
+| `pyyaml`      | Leitura e escrita do `config.yaml`            |
+| `pyperclip`   | Leitura do clipboard (`--clipboard`)          |
 | `fastapi`     | Servidor REST (opcional)                      |
 | `uvicorn`     | Servidor ASGI para a API REST (opcional)      |
 
@@ -397,7 +444,6 @@ curl -s -X POST http://localhost:8080/tts \
 | Funcionalidade | Descrição |
 |---|---|
 | Histórico de áudio | Cache dos últimos N áudios gerados para não re-sintetizar textos repetidos |
-| Leitura do clipboard | Falar o conteúdo copiado (`--clipboard`) |
 | Fila de frases | Enfileirar múltiplas entradas no modo interativo sem esperar cada reprodução |
 
 ### Interface

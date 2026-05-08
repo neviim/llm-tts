@@ -88,8 +88,41 @@ VOZ_POCKET_PADRAO = "rafael"
 
 FORMATOS_SUPORTADOS = {"wav", "flac", "ogg", "mp3"}
 DIR_OUTPUT = Path(__file__).parent / "output"
+CONFIG_PATH = Path(__file__).parent / "config.yaml"
+_CAMPOS_CONFIG = frozenset({
+    "engine", "idioma", "voz", "velocidade",
+    "streaming", "preprocessar", "formato", "sample_rate",
+})
 
 logging.basicConfig(level=logging.WARNING)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Configuração persistente (config.yaml)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _carregar_config(caminho: Path = CONFIG_PATH) -> dict:
+    if not caminho.exists():
+        return {}
+    try:
+        import yaml
+        return yaml.safe_load(caminho.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+
+
+def _salvar_config(cfg: dict, caminho: Path = CONFIG_PATH) -> None:
+    try:
+        import yaml
+        caminho.write_text(
+            yaml.dump(cfg, allow_unicode=True, default_flow_style=False, sort_keys=True),
+            encoding="utf-8",
+        )
+        print(f"[config] Salvo em {caminho}")
+    except ImportError:
+        print("[config] pyyaml não instalado. Execute: uv pip install pyyaml")
+    except Exception as e:
+        print(f"[config] Erro ao salvar: {e}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -640,6 +673,8 @@ def _voz_padrao(engine: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    cfg = _carregar_config()
+
     parser = argparse.ArgumentParser(
         description="TTS Português BR",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -669,6 +704,13 @@ exemplos:
   Ler do stdin via pipe:
     echo "Olá mundo" | python tts_ptbr.py
     cat frases.txt | python tts_ptbr.py --salvar saida.wav --juntar
+
+  Falar o texto do clipboard:
+    python tts_ptbr.py --clipboard
+    python tts_ptbr.py --clipboard --engine pocket --voz george --idioma en
+
+  Salvar configuração padrão:
+    python tts_ptbr.py --engine pocket --idioma en --salvar-config
 
   Exportar voice state para reuso:
     python tts_ptbr.py --engine pocket --clonar-voz minha_voz.wav --exportar-voz minha_voz.safetensors
@@ -762,6 +804,21 @@ exemplos:
         "--listar-vozes", action="store_true",
         help="Mostra as vozes embutidas disponíveis",
     )
+    parser.add_argument(
+        "--clipboard",
+        action="store_true",
+        help="Lê o texto do clipboard em vez de argumento ou stdin",
+    )
+    parser.add_argument(
+        "--salvar-config",
+        action="store_true",
+        help="Salva os parâmetros atuais como configuração padrão em config.yaml e sai",
+    )
+
+    _cfg_defaults = {k: v for k, v in cfg.items() if k in _CAMPOS_CONFIG}
+    if _cfg_defaults:
+        parser.set_defaults(**_cfg_defaults)
+
     args = parser.parse_args()
 
     if args.sem_reproduzir and not args.salvar:
@@ -770,6 +827,24 @@ exemplos:
         parser.error("--juntar requer --salvar")
     if args.velocidade <= 0:
         parser.error("--velocidade deve ser maior que 0")
+
+    # ── Salvar configuração ───────────────────────────────────────────────────
+    if args.salvar_config:
+        cfg_salvar: dict = {"engine": args.engine, "idioma": args.idioma}
+        if args.voz:
+            cfg_salvar["voz"] = args.voz
+        if args.velocidade != 1.0:
+            cfg_salvar["velocidade"] = args.velocidade
+        if args.streaming:
+            cfg_salvar["streaming"] = True
+        if args.preprocessar:
+            cfg_salvar["preprocessar"] = True
+        if args.formato:
+            cfg_salvar["formato"] = args.formato
+        if args.sample_rate:
+            cfg_salvar["sample_rate"] = args.sample_rate
+        _salvar_config(cfg_salvar)
+        return
 
     # ── Listar vozes ─────────────────────────────────────────────────────────
     if args.listar_vozes:
@@ -812,6 +887,19 @@ exemplos:
     if args.engine == "pocket" and args.exportar_voz and not args.texto and not args.arquivo:
         exportar_voz_pocket(fonte_voz, args.exportar_voz, args.idioma)
         return
+
+    # ── Clipboard ────────────────────────────────────────────────────────────
+    if args.clipboard:
+        try:
+            import pyperclip
+            texto_clip = pyperclip.paste().strip()
+        except ImportError:
+            print("[erro] pyperclip não instalado. Execute: uv pip install pyperclip")
+            sys.exit(1)
+        if not texto_clip:
+            print("[erro] Clipboard vazio.")
+            sys.exit(1)
+        args.texto = [texto_clip]
 
     # ── Coletar textos de arquivo ou stdin ────────────────────────────────────
     if args.arquivo:
@@ -878,7 +966,8 @@ exemplos:
     print("TTS Português BR — modo interativo")
     print(_status())
     print("Comandos: engine, idioma, voz, velocidade, preprocessar, streaming, salvar,")
-    print("          formato, sample-rate, sem-reproduzir, exportar, clonar, status, sair")
+    print("          formato, sample-rate, sem-reproduzir, exportar, clonar,")
+    print("          clipboard, config salvar, config ver, status, sair")
     print()
 
     while True:
@@ -1023,6 +1112,60 @@ exemplos:
             else:
                 preprocessar_atual = not preprocessar_atual
             print(_status())
+            continue
+
+        if low == "clipboard":
+            try:
+                import pyperclip
+                entrada = pyperclip.paste().strip()
+            except ImportError:
+                print("[clipboard] pyperclip não instalado. Execute: uv pip install pyperclip")
+                continue
+            if not entrada:
+                print("[clipboard] Vazio.")
+                continue
+            print(f"[clipboard] {entrada[:80]}{'...' if len(entrada) > 80 else ''}")
+            try:
+                falar(
+                    entrada, engine_atual, voz_atual,
+                    idioma=idioma_atual,
+                    preprocessar=preprocessar_atual,
+                    salvar=salvar_atual,
+                    formato=formato_atual,
+                    sample_rate_saida=sr_atual,
+                    velocidade=velocidade_atual,
+                    reproduzir=reproduzir_atual,
+                    streaming=streaming_atual,
+                )
+            except (RuntimeError, FileNotFoundError, ValueError) as e:
+                print(f"[erro] {e}")
+            continue
+
+        if cmd == "config":
+            if arg == "ver":
+                if CONFIG_PATH.exists():
+                    print(CONFIG_PATH.read_text(encoding="utf-8"))
+                else:
+                    print(f"[config] Nenhum arquivo em {CONFIG_PATH}")
+            elif arg == "salvar":
+                cfg_salvar: dict = {
+                    "engine": engine_atual,
+                    "idioma": idioma_atual,
+                    "voz": voz_atual,
+                }
+                if velocidade_atual != 1.0:
+                    cfg_salvar["velocidade"] = velocidade_atual
+                if streaming_atual:
+                    cfg_salvar["streaming"] = True
+                if preprocessar_atual:
+                    cfg_salvar["preprocessar"] = True
+                if formato_atual:
+                    cfg_salvar["formato"] = formato_atual
+                if sr_atual:
+                    cfg_salvar["sample_rate"] = sr_atual
+                _salvar_config(cfg_salvar)
+            else:
+                print("Use: config salvar  ou  config ver")
             continue
 
         try:

@@ -2,9 +2,10 @@
 import sys
 import pytest
 import numpy as np
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from tts_ptbr import main, falar, processar_batch
+from tts_ptbr import main, falar, processar_batch, _carregar_config, _salvar_config
 
 
 # ── Validação de argumentos ───────────────────────────────────────────────────
@@ -143,3 +144,67 @@ class TestProcessarBatch:
 
         assert "Doutor" in chamadas[0]
         assert "por cento" in chamadas[1]
+
+
+# ── --clipboard ───────────────────────────────────────────────────────────────
+
+class TestClipboard:
+    def _mock_edge(self):
+        return patch("tts_ptbr._sintetizar_edge", return_value=(AUDIO_FAKE, SR_FAKE))
+
+    def test_clipboard_fala_conteudo(self):
+        with patch("sys.argv", ["tts_ptbr.py", "--clipboard"]), \
+             patch("pyperclip.paste", return_value="Texto do clipboard"), \
+             self._mock_edge() as mock_edge, \
+             patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"):
+            main()
+            texto_enviado = mock_edge.call_args[0][0]
+            assert "Texto do clipboard" in texto_enviado
+
+    def test_clipboard_vazio_sai_com_erro(self):
+        with patch("sys.argv", ["tts_ptbr.py", "--clipboard"]), \
+             patch("pyperclip.paste", return_value=""), \
+             pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 1
+
+    def test_clipboard_sem_pyperclip_sai_com_erro(self):
+        import sys as _sys
+        with patch("sys.argv", ["tts_ptbr.py", "--clipboard"]), \
+             patch.dict(_sys.modules, {"pyperclip": None}), \
+             pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 1
+
+
+# ── config.yaml ───────────────────────────────────────────────────────────────
+
+class TestConfig:
+    def test_carregar_config_arquivo_ausente(self, tmp_path):
+        cfg = _carregar_config(tmp_path / "inexistente.yaml")
+        assert cfg == {}
+
+    def test_salvar_e_carregar_roundtrip(self, tmp_path):
+        caminho = tmp_path / "cfg.yaml"
+        _salvar_config({"engine": "pocket", "idioma": "en", "velocidade": 1.5}, caminho)
+        assert caminho.exists()
+        cfg = _carregar_config(caminho)
+        assert cfg["engine"] == "pocket"
+        assert cfg["idioma"] == "en"
+        assert cfg["velocidade"] == 1.5
+
+    def test_salvar_config_cli(self):
+        with patch("sys.argv", ["tts_ptbr.py", "--engine", "pocket", "--idioma", "en", "--salvar-config"]), \
+             patch("tts_ptbr._salvar_config") as mock_save:
+            main()
+        cfg_salvo = mock_save.call_args[0][0]
+        assert cfg_salvo["engine"] == "pocket"
+        assert cfg_salvo["idioma"] == "en"
+
+    def test_config_aplicado_como_default(self):
+        with patch("sys.argv", ["tts_ptbr.py", "Olá"]), \
+             patch("tts_ptbr._carregar_config", return_value={"engine": "edge", "idioma": "pt"}), \
+             patch("tts_ptbr._sintetizar_edge", return_value=(AUDIO_FAKE, SR_FAKE)) as mock_edge, \
+             patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"):
+            main()
+        assert mock_edge.called
