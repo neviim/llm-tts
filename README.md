@@ -71,6 +71,48 @@ Quando apenas um nome de arquivo é fornecido (sem diretório), o áudio é salv
 
 Formatos suportados: `wav`, `flac`, `ogg`, `mp3`
 
+### Pré-processamento de texto (`--preprocessar`)
+
+Expande abreviações, moeda, porcentagem, ordinais, siglas e números para PT-BR antes de enviar ao engine.
+
+```bash
+.venv/bin/python tts_ptbr.py --preprocessar "R$ 1.250,50 — 3º lugar, Dr. Silva com 98,5%"
+# → "mil, duzentos e cinquenta reais e cinquenta centavos — terceiro lugar, Doutor Silva com noventa e oito vírgula cinco por cento"
+```
+
+| Entrada        | Saída                                      |
+|----------------|--------------------------------------------|
+| `R$ 10,50`     | dez reais e cinquenta centavos             |
+| `98,5%`        | noventa e oito vírgula cinco por cento     |
+| `3º lugar`     | terceiro lugar                             |
+| `2ª edição`    | segunda edição                             |
+| `TTS`, `IBM`   | T T S, I B M                              |
+| `Dr. Ana`      | Doutora Ana                                |
+| `Av. Paulista` | Avenida Paulista                           |
+| `nº 100`       | número cem                                 |
+
+### Ler de arquivo de texto (`--arquivo`)
+
+Processa um arquivo com uma frase por linha. Com `--salvar`, gera arquivos numerados automaticamente.
+
+```bash
+# Gera frase_001.wav, frase_002.wav, ...
+.venv/bin/python tts_ptbr.py --arquivo frases.txt --salvar frase.wav
+
+# Junta tudo em um único arquivo
+.venv/bin/python tts_ptbr.py --arquivo frases.txt --salvar completo.wav --juntar
+
+# Combinado com pré-processamento
+.venv/bin/python tts_ptbr.py --arquivo frases.txt --preprocessar --salvar saida.wav --juntar
+```
+
+### Ler do stdin via pipe
+
+```bash
+echo "Olá, mundo!" | .venv/bin/python tts_ptbr.py
+cat frases.txt | .venv/bin/python tts_ptbr.py --salvar saida.wav --juntar
+```
+
 ### Escolher voz embutida
 
 ```bash
@@ -127,6 +169,7 @@ Comandos disponíveis:
 
 | Comando                          | Ação                                              |
 |----------------------------------|---------------------------------------------------|
+| `preprocessar [on\|off]`         | Ativa/desativa pré-processamento (toggle)         |
 | `voz <nome\|arquivo>`            | Troca voz (nome embutido, .safetensors ou .wav)   |
 | `clonar <arquivo.wav>`           | Define arquivo para clonagem de voz (pocket)      |
 | `exportar <destino.safetensors>` | Exporta voz atual para reuso (pocket)             |
@@ -210,18 +253,11 @@ llm-tts/
 | `soundfile`   | Decodificação de áudio MP3/WAV                |
 | `safetensors` | Importação/exportação de voice states         |
 | `scipy`       | Resampling de áudio (`--sample-rate`)         |
+| `num2words`   | Conversão de números para PT-BR (`--preprocessar`) |
 
 ---
 
 ## Roadmap — o que pode ser implementado
-
-### Entrada de texto
-
-| Funcionalidade | Descrição |
-|---|---|
-| Suporte a stdin | Ler texto de pipe: `echo "texto" \| python tts_ptbr.py` |
-| `--arquivo <texto.txt>` | Processar arquivo de texto linha por linha |
-| Pré-processamento | Expandir abreviações, números por extenso, siglas (ex: "R$ 10" → "dez reais") |
 
 ### Engine pocket-tts
 

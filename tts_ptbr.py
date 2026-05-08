@@ -18,6 +18,8 @@ Uso:
 
 import asyncio
 import io
+import re
+import sys
 import argparse
 import logging
 from pathlib import Path
@@ -27,6 +29,7 @@ import edge_tts
 import sounddevice as sd
 import soundfile as sf
 from scipy.signal import resample as scipy_resample
+from num2words import num2words as _n2w
 
 # ── Vozes do engine edge-tts ─────────────────────────────────────────────────
 VOZES_EDGE = {
@@ -46,6 +49,93 @@ FORMATOS_SUPORTADOS = {"wav", "flac", "ogg", "mp3"}
 DIR_OUTPUT = Path(__file__).parent / "output"
 
 logging.basicConfig(level=logging.WARNING)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pré-processamento de texto (PT-BR)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_ABREVIACOES = [
+    (r'\bDr\.(?=\s|$)',    'Doutor'),
+    (r'\bDra\.(?=\s|$)',   'Doutora'),
+    (r'\bSr\.(?=\s|$)',    'Senhor'),
+    (r'\bSra\.(?=\s|$)',   'Senhora'),
+    (r'\bProf\.(?=\s|$)',  'Professor'),
+    (r'\bProfa\.(?=\s|$)', 'Professora'),
+    (r'\bEng\.(?=\s|$)',   'Engenheiro'),
+    (r'\bAv\.(?=\s|$)',    'Avenida'),
+    (r'\bvs\.(?=\s|$)',    'versus'),
+    (r'\betc\.',           'etcétera'),
+    (r'\bex\.(?=\s|$)',    'exemplo'),
+    (r'\bobs\.(?=\s|$)',   'observação'),
+    (r'\bpág\.(?=\s|$)',   'página'),
+    (r'\bcap\.(?=\s|$)',   'capítulo'),
+    (r'\bap\.(?=\s|$)',    'apartamento'),
+    (r'\bn[º°]',           'número'),
+]
+
+_ORDINAIS_M = ['', 'primeiro', 'segundo', 'terceiro', 'quarto', 'quinto',
+               'sexto', 'sétimo', 'oitavo', 'nono', 'décimo']
+_ORDINAIS_F = ['', 'primeira', 'segunda', 'terceira', 'quarta', 'quinta',
+               'sexta', 'sétima', 'oitava', 'nona', 'décima']
+
+
+def _sub_moeda(m: re.Match) -> str:
+    raw = m.group(1).replace('.', '').replace(',', '.')
+    try:
+        valor = float(raw)
+        inteiro, frac = divmod(round(valor * 100), 100)
+        partes = []
+        if inteiro:
+            partes.append(f"{_n2w(inteiro, lang='pt_BR')} {'real' if inteiro == 1 else 'reais'}")
+        if frac:
+            partes.append(f"{_n2w(frac, lang='pt_BR')} {'centavo' if frac == 1 else 'centavos'}")
+        return ' e '.join(partes) or 'zero reais'
+    except (ValueError, OverflowError):
+        return m.group(0)
+
+
+def _sub_percentual(m: re.Match) -> str:
+    try:
+        n = float(m.group(1).replace('.', '').replace(',', '.'))
+        return f"{_n2w(n, lang='pt_BR')} por cento"
+    except (ValueError, OverflowError):
+        return m.group(0)
+
+
+def _sub_ordinal(m: re.Match) -> str:
+    n, genero = int(m.group(1)), m.group(2)
+    tabela = _ORDINAIS_F if genero in ('ª', 'a') else _ORDINAIS_M
+    return tabela[n] if 1 <= n < len(tabela) else m.group(0)
+
+
+def _sub_numero(m: re.Match) -> str:
+    raw = m.group(0)
+    try:
+        s = raw.replace('.', '').replace(',', '.')
+        n = float(s) if '.' in s else int(s)
+        return _n2w(n, lang='pt_BR')
+    except (ValueError, OverflowError):
+        return raw
+
+
+def preprocessar_texto(texto: str) -> str:
+    """Expande abreviações, moeda, porcentagem, ordinais, siglas e números."""
+    # Moeda antes dos números para evitar dupla substituição
+    texto = re.sub(r'R\$\s*([\d.,]+)', _sub_moeda, texto)
+    # Porcentagem
+    texto = re.sub(r'([\d.,]+)\s*%', _sub_percentual, texto)
+    # Ordinais: 1º 2ª 3°
+    texto = re.sub(r'\b(\d+)\s*([°ºª])', _sub_ordinal, texto)
+    # Abreviações
+    for padrao, sub in _ABREVIACOES:
+        texto = re.sub(padrao, sub, texto)
+    # Siglas (2+ letras maiúsculas sem dígitos): TTS → T T S
+    texto = re.sub(r'\b([A-Z]{2,})\b', lambda m: ' '.join(m.group(1)), texto)
+    # Números (inteiros e decimais PT-BR)
+    texto = re.sub(r'\b\d{1,3}(?:\.\d{3})*(?:,\d+)?\b|\b\d+(?:,\d+)?\b', _sub_numero, texto)
+    # Normalizar espaços
+    return re.sub(r'\s+', ' ', texto).strip()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -347,6 +437,73 @@ def _processar_saida(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Batch e utilitários de saída
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _sintetizar(texto: str, engine: str, fonte_voz: str) -> tuple[np.ndarray, int]:
+    if engine == "pocket":
+        return _sintetizar_pocket(texto, fonte_voz)
+    return _sintetizar_edge(texto, fonte_voz)
+
+
+def _concatenar_audio(lista: list[tuple[np.ndarray, int]]) -> tuple[np.ndarray, int]:
+    sr_ref = lista[0][1]
+    arrays = [_resample(d, sr, sr_ref) if sr != sr_ref else d for d, sr in lista]
+    return np.concatenate(arrays), sr_ref
+
+
+def _nome_numerado(base: str, n: int, total: int) -> str:
+    p = Path(base)
+    digits = max(3, len(str(total)))
+    return str(p.with_stem(f"{p.stem}_{str(n).zfill(digits)}"))
+
+
+def _ler_textos_arquivo(caminho: str) -> list[str]:
+    return [l.strip() for l in Path(caminho).read_text(encoding="utf-8").splitlines() if l.strip()]
+
+
+def _ler_textos_stdin() -> list[str]:
+    return [l.strip() for l in sys.stdin.read().splitlines() if l.strip()]
+
+
+def processar_batch(
+    textos: list[str],
+    engine: str,
+    fonte_voz: str,
+    *,
+    preprocessar: bool = False,
+    salvar: str | None = None,
+    formato: str | None = None,
+    sample_rate_saida: int | None = None,
+    reproduzir: bool = True,
+    juntar: bool = False,
+) -> None:
+    if preprocessar:
+        textos = [preprocessar_texto(t) for t in textos]
+
+    if juntar:
+        print(f"[batch] {len(textos)} linha(s) — gerando e juntando...")
+        segmentos = []
+        for i, texto in enumerate(textos, 1):
+            print(f"  [{i}/{len(textos)}] {texto[:60]}{'...' if len(texto) > 60 else ''}")
+            segmentos.append(_sintetizar(texto, engine, fonte_voz))
+        data, sr = _concatenar_audio(segmentos)
+        _processar_saida(data, sr,
+                         salvar=salvar, formato=formato,
+                         sample_rate_saida=sample_rate_saida, reproduzir=reproduzir)
+        return
+
+    for i, texto in enumerate(textos, 1):
+        prefixo = f"[{i}/{len(textos)}]" if len(textos) > 1 else f"[{engine}]"
+        print(f"{prefixo} {texto[:70]}{'...' if len(texto) > 70 else ''}")
+        destino = _nome_numerado(salvar, i, len(textos)) if salvar and len(textos) > 1 else salvar
+        data, sr = _sintetizar(texto, engine, fonte_voz)
+        _processar_saida(data, sr,
+                         salvar=destino, formato=formato,
+                         sample_rate_saida=sample_rate_saida, reproduzir=reproduzir)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Ponto de entrada unificado
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -355,22 +512,18 @@ def falar(
     engine: str,
     fonte_voz: str,
     *,
+    preprocessar: bool = False,
     salvar: str | None = None,
     formato: str | None = None,
     sample_rate_saida: int | None = None,
     reproduzir: bool = True,
 ) -> None:
-    if engine == "pocket":
-        data, sr = _sintetizar_pocket(texto, fonte_voz)
-    else:
-        data, sr = _sintetizar_edge(texto, fonte_voz)
-    _processar_saida(
-        data, sr,
-        salvar=salvar,
-        formato=formato,
-        sample_rate_saida=sample_rate_saida,
-        reproduzir=reproduzir,
-    )
+    if preprocessar:
+        texto = preprocessar_texto(texto)
+    data, sr = _sintetizar(texto, engine, fonte_voz)
+    _processar_saida(data, sr,
+                     salvar=salvar, formato=formato,
+                     sample_rate_saida=sample_rate_saida, reproduzir=reproduzir)
 
 
 def _vozes_para_engine(engine: str) -> dict:
@@ -394,14 +547,21 @@ exemplos:
   Falar e salvar em WAV:
     python tts_ptbr.py --salvar saida.wav "Olá, mundo!"
 
-  Salvar em FLAC a 44100 Hz sem reproduzir:
-    python tts_ptbr.py --salvar saida.flac --sample-rate 44100 --sem-reproduzir "Texto"
+  Pré-processar texto antes de falar:
+    python tts_ptbr.py --preprocessar "R$ 1.250,00 — 3º lugar, Dr. Silva"
+
+  Ler de arquivo de texto (uma frase por linha):
+    python tts_ptbr.py --arquivo frases.txt --salvar frase.wav
+
+  Ler de arquivo e juntar em um único áudio:
+    python tts_ptbr.py --arquivo frases.txt --salvar completo.wav --juntar
+
+  Ler do stdin via pipe:
+    echo "Olá mundo" | python tts_ptbr.py
+    cat frases.txt | python tts_ptbr.py --salvar saida.wav --juntar
 
   Pocket TTS + salvar em OGG:
     python tts_ptbr.py --engine pocket --salvar saida.ogg "Texto"
-
-  Clonar voz e salvar resultado:
-    python tts_ptbr.py --engine pocket --clonar-voz minha_voz.wav --salvar saida.wav "Texto"
 
   Exportar voice state para reuso:
     python tts_ptbr.py --engine pocket --clonar-voz minha_voz.wav --exportar-voz minha_voz.safetensors
@@ -457,6 +617,22 @@ exemplos:
         help="Salva o áudio sem reproduzir (requer --salvar)",
     )
     parser.add_argument(
+        "--arquivo",
+        metavar="TXT",
+        default=None,
+        help="Arquivo de texto com uma frase por linha",
+    )
+    parser.add_argument(
+        "--preprocessar", "-p",
+        action="store_true",
+        help="Expande abreviações, moeda, porcentagem, ordinais, siglas e números",
+    )
+    parser.add_argument(
+        "--juntar",
+        action="store_true",
+        help="Junta todas as frases em um único arquivo de áudio (usar com --arquivo ou stdin)",
+    )
+    parser.add_argument(
         "--listar-vozes", action="store_true",
         help="Mostra as vozes embutidas disponíveis",
     )
@@ -464,6 +640,8 @@ exemplos:
 
     if args.sem_reproduzir and not args.salvar:
         parser.error("--sem-reproduzir requer --salvar")
+    if args.juntar and not args.salvar:
+        parser.error("--juntar requer --salvar")
 
     # ── Listar vozes ─────────────────────────────────────────────────────────
     if args.listar_vozes:
@@ -484,6 +662,7 @@ exemplos:
         sample_rate_saida=args.sample_rate,
         reproduzir=not args.sem_reproduzir,
     )
+    saida_batch = dict(**saida, preprocessar=args.preprocessar, juntar=args.juntar)
 
     # ── Determinar fonte de voz ───────────────────────────────────────────────
     if args.engine == "pocket":
@@ -493,15 +672,29 @@ exemplos:
         fonte_voz = args.voz if args.voz in vozes else _voz_padrao(args.engine)
 
     # ── Apenas exportar voz (sem texto) ──────────────────────────────────────
-    if args.engine == "pocket" and args.exportar_voz and not args.texto:
+    if args.engine == "pocket" and args.exportar_voz and not args.texto and not args.arquivo:
         exportar_voz_pocket(fonte_voz, args.exportar_voz)
         return
+
+    # ── Coletar textos de arquivo ou stdin ────────────────────────────────────
+    if args.arquivo:
+        textos = _ler_textos_arquivo(args.arquivo)
+        processar_batch(textos, args.engine, fonte_voz, **saida_batch)
+        if args.engine == "pocket" and args.exportar_voz:
+            exportar_voz_pocket(fonte_voz, args.exportar_voz)
+        return
+
+    if not args.texto and not sys.stdin.isatty():
+        textos = _ler_textos_stdin()
+        if textos:
+            processar_batch(textos, args.engine, fonte_voz, **saida_batch)
+            return
 
     # ── Frase direta ──────────────────────────────────────────────────────────
     if args.texto:
         texto = " ".join(args.texto)
         print(f"[{args.engine}] {texto}")
-        falar(texto, args.engine, fonte_voz, **saida)
+        falar(texto, args.engine, fonte_voz, preprocessar=args.preprocessar, **saida)
         if args.engine == "pocket" and args.exportar_voz:
             exportar_voz_pocket(fonte_voz, args.exportar_voz)
         return
@@ -513,9 +706,12 @@ exemplos:
     formato_atual: str | None = args.formato
     sr_atual: int | None = args.sample_rate
     reproduzir_atual: bool = not args.sem_reproduzir
+    preprocessar_atual: bool = args.preprocessar
 
     def _status():
         partes = [f"engine: {engine_atual}", f"voz: {voz_atual}"]
+        if preprocessar_atual:
+            partes.append("preprocessar: on")
         if salvar_atual:
             partes.append(f"salvar: {salvar_atual}")
         if formato_atual:
@@ -528,7 +724,7 @@ exemplos:
 
     print(f"TTS Português BR — modo interativo")
     print(_status())
-    print("Comandos: 'voz', 'engine', 'salvar', 'formato', 'sample-rate', 'sem-reproduzir', 'exportar', 'clonar', 'status', 'sair'")
+    print("Comandos: 'voz', 'engine', 'preprocessar', 'salvar', 'formato', 'sample-rate', 'sem-reproduzir', 'exportar', 'clonar', 'status', 'sair'")
     print()
 
     while True:
@@ -632,10 +828,21 @@ exemplos:
             print(_status())
             continue
 
+        if cmd == "preprocessar":
+            if arg.lower() in ("on", "1", "sim"):
+                preprocessar_atual = True
+            elif arg.lower() in ("off", "0", "não", "nao"):
+                preprocessar_atual = False
+            else:
+                preprocessar_atual = not preprocessar_atual
+            print(_status())
+            continue
+
         try:
             print("[falando...]")
             falar(
                 entrada, engine_atual, voz_atual,
+                preprocessar=preprocessar_atual,
                 salvar=salvar_atual,
                 formato=formato_atual,
                 sample_rate_saida=sr_atual,
