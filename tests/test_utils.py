@@ -1,0 +1,174 @@
+"""Testes para funções utilitárias de áudio, arquivos e autenticação."""
+import os
+import pytest
+import numpy as np
+
+import tts_ptbr
+from tts_ptbr import (
+    _inferir_formato,
+    _nome_numerado,
+    _resample,
+    _concatenar_audio,
+    _ler_textos_arquivo,
+    _ler_token_env,
+)
+
+
+# ── _inferir_formato ──────────────────────────────────────────────────────────
+
+class TestInferirFormato:
+    @pytest.mark.parametrize("arquivo,esperado", [
+        ("saida.wav",  "wav"),
+        ("saida.flac", "flac"),
+        ("saida.ogg",  "ogg"),
+        ("saida.mp3",  "mp3"),
+    ])
+    def test_infere_pela_extensao(self, arquivo, esperado):
+        assert _inferir_formato(arquivo, None) == esperado
+
+    def test_formato_explicito_sobrepoe_extensao(self):
+        assert _inferir_formato("saida.wav", "mp3") == "mp3"
+
+    def test_sem_extensao_reconhecida_retorna_wav(self):
+        assert _inferir_formato("saida", None) == "wav"
+        assert _inferir_formato("saida.txt", None) == "wav"
+
+    def test_formato_invalido_levanta_erro(self):
+        with pytest.raises(ValueError, match="não suportado"):
+            _inferir_formato("saida.wav", "aac")
+
+    def test_formato_case_insensitive(self):
+        assert _inferir_formato("saida.WAV", None) == "wav"
+        assert _inferir_formato("saida.wav", "MP3") == "mp3"
+
+
+# ── _nome_numerado ────────────────────────────────────────────────────────────
+
+class TestNomeNumerado:
+    def test_padding_minimo_tres_digitos(self):
+        assert _nome_numerado("frase.wav", 1, 10) == "frase_001.wav"
+
+    def test_dois_digitos_ainda_usa_tres(self):
+        assert _nome_numerado("frase.wav", 10, 99) == "frase_010.wav"
+
+    def test_mil_itens_usa_quatro_digitos(self):
+        assert _nome_numerado("frase.wav", 1, 1000) == "frase_0001.wav"
+
+    def test_preserva_extensao(self):
+        assert _nome_numerado("audio.flac", 2, 5) == "audio_002.flac"
+
+    def test_preserva_diretorio(self):
+        assert _nome_numerado("output/frase.wav", 3, 5) == "output/frase_003.wav"
+
+
+# ── _resample ─────────────────────────────────────────────────────────────────
+
+class TestResample:
+    def test_mesma_taxa_retorna_original(self):
+        data = np.array([1.0, 2.0, 3.0, 4.0])
+        result = _resample(data, 22050, 22050)
+        np.testing.assert_array_equal(result, data)
+
+    def test_dobra_taxa_dobra_amostras(self):
+        data = np.ones(100)
+        result = _resample(data, 22050, 44100)
+        assert len(result) == 200
+
+    def test_metade_taxa_metade_amostras(self):
+        data = np.ones(100)
+        result = _resample(data, 44100, 22050)
+        assert len(result) == 50
+
+    def test_preserva_dtype(self):
+        data = np.ones(100, dtype=np.float32)
+        result = _resample(data, 22050, 44100)
+        assert result.dtype == np.float32
+
+
+# ── _concatenar_audio ─────────────────────────────────────────────────────────
+
+class TestConcatenarAudio:
+    def test_mesma_taxa(self):
+        a = (np.ones(100), 22050)
+        b = (np.ones(200) * 2, 22050)
+        data, sr = _concatenar_audio([a, b])
+        assert sr == 22050
+        assert len(data) == 300
+
+    def test_usa_sr_do_primeiro_elemento(self):
+        a = (np.ones(100), 22050)
+        b = (np.ones(100), 44100)
+        _, sr = _concatenar_audio([a, b])
+        assert sr == 22050
+
+    def test_reamostra_segundo_para_sr_do_primeiro(self):
+        # b a 44100 Hz → reamostrado para 22050 → metade das amostras
+        a = (np.ones(100), 22050)
+        b = (np.ones(100), 44100)
+        data, sr = _concatenar_audio([a, b])
+        assert len(data) == 150  # 100 + 50
+
+
+# ── _ler_textos_arquivo ───────────────────────────────────────────────────────
+
+class TestLerTextos:
+    def test_leitura_basica(self, tmp_path):
+        arq = tmp_path / "frases.txt"
+        arq.write_text("Linha 1\nLinha 2\nLinha 3\n", encoding="utf-8")
+        assert _ler_textos_arquivo(str(arq)) == ["Linha 1", "Linha 2", "Linha 3"]
+
+    def test_ignora_linhas_vazias(self, tmp_path):
+        arq = tmp_path / "frases.txt"
+        arq.write_text("Linha 1\n\n\nLinha 2\n", encoding="utf-8")
+        assert _ler_textos_arquivo(str(arq)) == ["Linha 1", "Linha 2"]
+
+    def test_remove_espacos_nas_bordas(self, tmp_path):
+        arq = tmp_path / "frases.txt"
+        arq.write_text("  Linha com espaço  \n", encoding="utf-8")
+        assert _ler_textos_arquivo(str(arq)) == ["Linha com espaço"]
+
+    def test_arquivo_so_com_linhas_vazias(self, tmp_path):
+        arq = tmp_path / "frases.txt"
+        arq.write_text("\n\n\n", encoding="utf-8")
+        assert _ler_textos_arquivo(str(arq)) == []
+
+
+# ── _ler_token_env ────────────────────────────────────────────────────────────
+
+class TestLerTokenEnv:
+    def test_lê_da_variavel_de_ambiente(self, monkeypatch):
+        monkeypatch.setenv("HF_TOKEN", "hf_test123")
+        assert _ler_token_env() == "hf_test123"
+
+    def test_le_do_arquivo_env(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("HF_TOKEN", raising=False)
+        env_file = tmp_path / ".env"
+        env_file.write_text("HF_TOKEN=hf_from_file\n", encoding="utf-8")
+        monkeypatch.setattr(tts_ptbr, "_ENV_PATH", env_file)
+        assert _ler_token_env() == "hf_from_file"
+
+    def test_token_com_aspas_no_arquivo(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("HF_TOKEN", raising=False)
+        env_file = tmp_path / ".env"
+        env_file.write_text('HF_TOKEN="hf_quoted"\n', encoding="utf-8")
+        monkeypatch.setattr(tts_ptbr, "_ENV_PATH", env_file)
+        assert _ler_token_env() == "hf_quoted"
+
+    def test_retorna_none_se_ausente(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("HF_TOKEN", raising=False)
+        monkeypatch.setattr(tts_ptbr, "_ENV_PATH", tmp_path / ".env_inexistente")
+        assert _ler_token_env() is None
+
+    def test_ignora_comentarios_no_arquivo(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("HF_TOKEN", raising=False)
+        env_file = tmp_path / ".env"
+        env_file.write_text("# comentário\nHF_TOKEN=hf_real\n", encoding="utf-8")
+        monkeypatch.setattr(tts_ptbr, "_ENV_PATH", env_file)
+        assert _ler_token_env() == "hf_real"
+
+    def test_variavel_de_ambiente_tem_prioridade(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HF_TOKEN", "hf_env")
+        env_file = tmp_path / ".env"
+        env_file.write_text("HF_TOKEN=hf_file\n", encoding="utf-8")
+        monkeypatch.setattr(tts_ptbr, "_ENV_PATH", env_file)
+        assert _ler_token_env() == "hf_env"
