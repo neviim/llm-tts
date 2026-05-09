@@ -6,7 +6,14 @@ Guia de leitura recomendado: do básico ao avançado.
 
 ## 1. Começando
 
-### [1.1 Instalação](instalacao.md)
+### [1.1 Ajuda integrada](help.md)
+Consulte o help diretamente no terminal antes de qualquer outra coisa.
+
+- `python tts_ptbr.py --help` — exibe todas as opções com exemplos
+- Layout com 8 seções coloridas: engine, saída, entrada, processamento, clonagem, cache, config, exemplos
+- Cores ANSI automáticas no terminal; texto limpo ao redirecionar para arquivo
+
+### [1.2 Instalação](instalacao.md)
 Configure o ambiente antes de qualquer coisa.
 
 - Criar ambiente virtual com `uv`

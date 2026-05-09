@@ -5,6 +5,7 @@ Leia o **[index.md](index.md)** para o guia de leitura em ordem recomendada.
 | Documento | Conteúdo |
 |---|---|
 | [index.md](index.md) | Índice ordenado — do básico ao avançado |
+| [help.md](help.md) | Ajuda integrada `--help` com layout e exemplos |
 | [instalacao.md](instalacao.md) | Instalação do ambiente e dependências |
 | [uso-basico.md](uso-basico.md) | Engines, vozes, idiomas e primeiros comandos |
 | [saida-audio.md](saida-audio.md) | Formatos, batch, stdin, velocidade e streaming |
