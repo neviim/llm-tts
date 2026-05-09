@@ -301,6 +301,10 @@ Comandos disponíveis:
 | `cache ver`                      | Mostra estatísticas do cache (entradas e tamanho) |
 | `cache limpar`                   | Remove todos os áudios em cache                   |
 | `cache on\|off`                  | Ativa/desativa o cache para a sessão              |
+| `fila on`                        | Ativa enfileiramento assíncrono (não bloqueia)    |
+| `fila off`                       | Desativa enfileiramento (modo normal)             |
+| `fila ver`                       | Mostra quantas frases estão pendentes             |
+| `fila limpar`                    | Cancela as frases na fila                         |
 | `config salvar`                  | Persiste as configurações da sessão em config.yaml |
 | `config ver`                     | Exibe o conteúdo atual do config.yaml             |
 | `sem-reproduzir`                 | Alterna entre salvar-e-reproduzir / só salvar     |
@@ -313,6 +317,56 @@ Comandos disponíveis:
 .venv/bin/python tts_ptbr.py --listar-vozes
 .venv/bin/python tts_ptbr.py --engine pocket --listar-vozes
 ```
+
+### Fila de frases (modo interativo)
+
+No modo interativo, `fila on` permite digitar várias frases sem esperar a reprodução de cada uma — o áudio é gerado e tocado em background.
+
+```
+Texto: fila on
+[fila] Ativada — frases serão enfileiradas sem bloquear.
+
+Texto: Primeira frase para falar
+[fila] Adicionado. (1 na fila)
+
+Texto: Segunda frase em sequência
+[fila] Adicionado. (2 na fila)
+
+Texto: fila ver
+[fila] 1 item(s) pendente(s).
+
+Texto: fila limpar
+[fila] 1 item(s) cancelado(s).
+
+Texto: fila off
+[fila] Desativada.
+```
+
+### Barra de progresso em batch
+
+Instalado `tqdm`, o processamento em batch exibe uma barra de progresso automática:
+
+```bash
+.venv/bin/python tts_ptbr.py --arquivo frases.txt --salvar saida.wav
+# sintetizando: 100%|████████████| 10/10 [00:15<00:00, Última frase...]
+```
+
+### Shell completion
+
+Ativa o autocompletar de argumentos no bash/zsh:
+
+```bash
+# Instalar argcomplete (já incluso em requirements.txt)
+uv pip install argcomplete
+
+# Ativar para o script (adicionar ao ~/.bashrc ou ~/.zshrc)
+eval "$(register-python-argcomplete .venv/bin/python tts_ptbr.py)"
+
+# Ou ativar globalmente
+activate-global-python-argcomplete
+```
+
+Após ativar, `Tab` completa `--engine`, `--voz`, `--idioma`, `--formato`, etc.
 
 ---
 
@@ -424,6 +478,8 @@ llm-tts/
 | `num2words`   | Conversão de números para PT-BR (`--preprocessar`) |
 | `pyyaml`      | Leitura e escrita do `config.yaml`            |
 | `pyperclip`   | Leitura do clipboard (`--clipboard`)          |
+| `tqdm`        | Barra de progresso no processamento batch     |
+| `argcomplete` | Shell completion para bash/zsh               |
 | `fastapi`     | Servidor REST (opcional)                      |
 | `uvicorn`     | Servidor ASGI para a API REST (opcional)      |
 
@@ -468,19 +524,7 @@ curl -s -X POST http://localhost:8080/tts \
 
 ## Roadmap — o que pode ser implementado
 
-### Produtividade
-
-| Funcionalidade | Descrição |
-|---|---|
-| Fila de frases | Enfileirar múltiplas entradas no modo interativo sem esperar cada reprodução |
-
-### Interface
-
-| Funcionalidade | Descrição |
-|---|---|
-| Barra de progresso | Indicar andamento no download do modelo e na geração de áudio longo |
-| Configuração via arquivo | `config.yaml` com engine, voz e parâmetros padrão persistentes |
-| Shell completion | Autocompletar argumentos no bash/zsh |
+Todas as funcionalidades do roadmap foram implementadas.
 
 ---
 

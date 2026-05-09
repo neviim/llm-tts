@@ -5,7 +5,7 @@ import numpy as np
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from tts_ptbr import main, falar, processar_batch, _carregar_config, _salvar_config
+from tts_ptbr import main, falar, processar_batch, _carregar_config, _salvar_config, _FilaReproducao
 
 
 # ── Validação de argumentos ───────────────────────────────────────────────────
@@ -208,3 +208,59 @@ class TestConfig:
              patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"):
             main()
         assert mock_edge.called
+
+
+# ── Fila de reprodução ────────────────────────────────────────────────────────
+
+class TestFilaReproducao:
+    def test_adicionar_retorna_tamanho(self):
+        fila = _FilaReproducao()
+        with patch("tts_ptbr.falar"):
+            n = fila.adicionar("Texto 1", {"engine": "edge", "voz": "francisca"})
+        assert n >= 1
+
+    def test_limpar_esvazia_fila(self):
+        import queue as _q
+        fila = _FilaReproducao()
+        fila._q.put(("Texto 1", {}))
+        fila._q.put(("Texto 2", {}))
+        n = fila.limpar()
+        assert n == 2
+        assert fila.tamanho() == 0
+
+    def test_tamanho(self):
+        fila = _FilaReproducao()
+        fila._q.put(("t1", {}))
+        fila._q.put(("t2", {}))
+        assert fila.tamanho() == 2
+
+
+# ── Barra de progresso (tqdm) ─────────────────────────────────────────────────
+
+class TestBatchTqdm:
+    def _mock_sintetizar(self):
+        return patch("tts_ptbr._sintetizar", return_value=(AUDIO_FAKE, SR_FAKE))
+
+    def test_batch_com_tqdm(self, tmp_path):
+        textos = ["Frase um", "Frase dois"]
+        with self._mock_sintetizar(), \
+             patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"):
+            processar_batch(
+                textos, "edge", "francisca",
+                salvar=str(tmp_path / "f.wav"),
+                reproduzir=False,
+            )
+        assert len(list(tmp_path.glob("f_*.wav"))) == 2
+
+    def test_batch_sem_tqdm_fallback(self, tmp_path):
+        import sys as _sys
+        textos = ["Frase um", "Frase dois"]
+        with self._mock_sintetizar(), \
+             patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"), \
+             patch.dict(_sys.modules, {"tqdm": None}):
+            processar_batch(
+                textos, "edge", "francisca",
+                salvar=str(tmp_path / "f.wav"),
+                reproduzir=False,
+            )
+        assert len(list(tmp_path.glob("f_*.wav"))) == 2

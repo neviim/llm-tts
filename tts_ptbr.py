@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# PYTHON_ARGCOMPLETE_OK
 """
 TTS Português BR
 Converte texto em voz com dois engines:
@@ -23,10 +24,12 @@ import asyncio
 import hashlib
 import io
 import json
+import queue as _queue_module
 import re
 import sys
 import argparse
 import logging
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -134,6 +137,68 @@ def _salvar_config(cfg: dict, caminho: Path = CONFIG_PATH) -> None:
         print("[config] pyyaml não instalado. Execute: uv pip install pyyaml")
     except Exception as e:
         print(f"[config] Erro ao salvar: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Fila de reprodução assíncrona
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _FilaReproducao:
+    """Fila de frases para reprodução em background no modo interativo."""
+
+    def __init__(self) -> None:
+        self._q: _queue_module.Queue = _queue_module.Queue()
+        self._thread: threading.Thread | None = None
+
+    def ativo(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+    def adicionar(self, texto: str, config: dict) -> int:
+        if not self.ativo():
+            self._thread = threading.Thread(target=self._worker, daemon=True, name="fila-tts")
+            self._thread.start()
+        self._q.put((texto, config))
+        return self._q.qsize()
+
+    def limpar(self) -> int:
+        count = 0
+        while True:
+            try:
+                self._q.get_nowait()
+                count += 1
+            except _queue_module.Empty:
+                break
+        return count
+
+    def tamanho(self) -> int:
+        return self._q.qsize()
+
+    def _worker(self) -> None:
+        while True:
+            try:
+                item = self._q.get(timeout=1.0)
+            except _queue_module.Empty:
+                continue
+            texto, cfg = item
+            try:
+                falar(
+                    texto, cfg["engine"], cfg["voz"],
+                    idioma=cfg.get("idioma", IDIOMA_POCKET_PADRAO),
+                    preprocessar=cfg.get("preprocessar", False),
+                    salvar=cfg.get("salvar"),
+                    formato=cfg.get("formato"),
+                    sample_rate_saida=cfg.get("sample_rate_saida"),
+                    velocidade=cfg.get("velocidade", 1.0),
+                    reproduzir=cfg.get("reproduzir", True),
+                    streaming=cfg.get("streaming", False),
+                )
+            except Exception as e:
+                print(f"\n[fila] Erro: {e}")
+            finally:
+                self._q.task_done()
+
+
+_fila_reproducao = _FilaReproducao()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -705,19 +770,33 @@ def processar_batch(
         reproduzir=reproduzir,
     )
 
+    try:
+        from tqdm import tqdm as _tqdm
+    except ImportError:
+        _tqdm = None
+
+    def _pbar(seq, **kw):
+        return _tqdm(seq, **kw) if _tqdm else seq
+
     if juntar:
         print(f"[batch] {len(textos)} linha(s) — gerando e juntando...")
         segmentos = []
-        for i, texto in enumerate(textos, 1):
-            print(f"  [{i}/{len(textos)}] {texto[:60]}{'...' if len(texto) > 60 else ''}")
+        pbar = _pbar(textos, desc="sintetizando", unit="frase")
+        for texto in pbar:
+            if _tqdm:
+                pbar.set_description(texto[:45])
             segmentos.append(_sintetizar(texto, engine, fonte_voz, idioma))
         data, sr = _concatenar_audio(segmentos)
         _processar_saida(data, sr, salvar=salvar, **saida_kw)
         return
 
-    for i, texto in enumerate(textos, 1):
-        prefixo = f"[{i}/{len(textos)}]" if len(textos) > 1 else f"[{engine}]"
-        print(f"{prefixo} {texto[:70]}{'...' if len(texto) > 70 else ''}")
+    pbar = _pbar(textos, desc="batch", unit="frase")
+    for i, texto in enumerate(pbar, 1):
+        if _tqdm:
+            pbar.set_description(texto[:45])
+        else:
+            prefixo = f"[{i}/{len(textos)}]" if len(textos) > 1 else f"[{engine}]"
+            print(f"{prefixo} {texto[:70]}{'...' if len(texto) > 70 else ''}")
         destino = _nome_numerado(salvar, i, len(textos)) if salvar and len(textos) > 1 else salvar
         data, sr = _sintetizar(texto, engine, fonte_voz, idioma)
         _processar_saida(data, sr, salvar=destino, **saida_kw)
@@ -938,6 +1017,12 @@ exemplos:
     if _cfg_defaults:
         parser.set_defaults(**_cfg_defaults)
 
+    try:
+        import argcomplete
+        argcomplete.autocomplete(parser)
+    except ImportError:
+        pass
+
     args = parser.parse_args()
 
     if args.sem_reproduzir and not args.salvar:
@@ -1069,6 +1154,16 @@ exemplos:
     reproduzir_atual: bool = not args.sem_reproduzir
     preprocessar_atual: bool = args.preprocessar
     streaming_atual: bool = args.streaming
+    fila_ativa: bool = False
+
+    def _config_fala() -> dict:
+        return dict(
+            engine=engine_atual, voz=voz_atual, idioma=idioma_atual,
+            preprocessar=preprocessar_atual, salvar=salvar_atual,
+            formato=formato_atual, sample_rate_saida=sr_atual,
+            velocidade=velocidade_atual, reproduzir=reproduzir_atual,
+            streaming=streaming_atual,
+        )
 
     def _status():
         partes = [f"engine: {engine_atual}"]
@@ -1089,13 +1184,17 @@ exemplos:
             partes.append(f"sample-rate: {sr_atual}")
         if not reproduzir_atual:
             partes.append("sem-reproduzir")
+        if fila_ativa:
+            n = _fila_reproducao.tamanho()
+            partes.append(f"fila: on ({n})" if n else "fila: on")
         return "  ".join(partes)
 
     print("TTS Português BR — modo interativo")
     print(_status())
     print("Comandos: engine, idioma, voz, velocidade, preprocessar, streaming, salvar,")
     print("          formato, sample-rate, sem-reproduzir, exportar, clonar,")
-    print("          clipboard, cache ver, cache limpar, config salvar, config ver, status, sair")
+    print("          fila on/off/ver/limpar, clipboard,")
+    print("          cache ver/limpar/on/off, config salvar/ver, status, sair")
     print()
 
     while True:
@@ -1269,6 +1368,25 @@ exemplos:
                 print(f"[erro] {e}")
             continue
 
+        if cmd == "fila":
+            if arg in ("on", ""):
+                fila_ativa = True
+                print("[fila] Ativada — frases serão enfileiradas sem bloquear.")
+                print(_status())
+            elif arg == "off":
+                fila_ativa = False
+                print("[fila] Desativada.")
+                print(_status())
+            elif arg == "ver":
+                n = _fila_reproducao.tamanho()
+                print(f"[fila] {n} item(s) pendente(s).")
+            elif arg == "limpar":
+                n = _fila_reproducao.limpar()
+                print(f"[fila] {n} item(s) cancelado(s).")
+            else:
+                print("Use: fila on  |  fila off  |  fila ver  |  fila limpar")
+            continue
+
         if cmd == "cache":
             if arg == "ver":
                 print(_cache_stats())
@@ -1310,6 +1428,11 @@ exemplos:
                 _salvar_config(cfg_salvar)
             else:
                 print("Use: config salvar  ou  config ver")
+            continue
+
+        if fila_ativa:
+            n = _fila_reproducao.adicionar(entrada, _config_fala())
+            print(f"[fila] Adicionado. ({n} na fila)")
             continue
 
         try:

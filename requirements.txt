@@ -5,3 +5,5 @@ pocket-tts>=0.1.0
 num2words>=0.5.14
 pyyaml>=6.0
 pyperclip>=1.8.2
+tqdm>=4.65.0
+argcomplete>=3.0.0
