@@ -351,6 +351,20 @@ class TestProcessarSaida:
             _processar_saida(AUDIO_FAKE_PS, SR_FAKE_PS, salvar=destino, reproduzir=False)
         mock_play.assert_not_called()
 
+    def test_so_nome_vai_para_pasta_output(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(tts_ptbr, "DIR_OUTPUT", tmp_path / "output")
+        with patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"):
+            _processar_saida(AUDIO_FAKE_PS, SR_FAKE_PS, salvar="saida.wav", reproduzir=False)
+        assert (tmp_path / "output" / "saida.wav").exists()
+
+    def test_path_absoluta_nao_redireciona(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(tts_ptbr, "DIR_OUTPUT", tmp_path / "output")
+        destino = str(tmp_path / "outro" / "saida.wav")
+        with patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"):
+            _processar_saida(AUDIO_FAKE_PS, SR_FAKE_PS, salvar=destino, reproduzir=False)
+        assert (tmp_path / "outro" / "saida.wav").exists()
+        assert not (tmp_path / "output").exists()
+
 
 # ── _cache_stats ──────────────────────────────────────────────────────────────
 
