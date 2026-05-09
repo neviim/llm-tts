@@ -850,6 +850,199 @@ def _voz_padrao(engine: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# CLI — help formatado
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _imprimir_ajuda() -> None:
+    import sys
+    C = sys.stdout.isatty()
+
+    def _b(t):  return f"\033[1m{t}\033[0m"        if C else t   # negrito
+    def _c(t):  return f"\033[1;36m{t}\033[0m"     if C else t   # ciano negrito
+    def _y(t):  return f"\033[1;33m{t}\033[0m"     if C else t   # amarelo negrito
+    def _g(t):  return f"\033[32m{t}\033[0m"        if C else t   # verde
+    def _d(t):  return f"\033[2m{t}\033[0m"         if C else t   # dim
+    def _w(t):  return f"\033[1;37m{t}\033[0m"     if C else t   # branco negrito
+    def _m(t):  return f"\033[35m{t}\033[0m"        if C else t   # magenta (metavar)
+
+    W = 74
+    COL = 32  # coluna onde descrição começa
+
+    def _sep(titulo):
+        barra = f"── {titulo} " + "─" * (W - len(titulo) - 4)
+        print(f"\n{_c(barra)}")
+
+    def _opt(flags, meta, desc, bullets=(), exs=()):
+        raw = f"  {flags}"
+        if meta:
+            raw += f"  {meta}"
+        pad = max(1, COL - len(raw))
+        linha = f"  {_y(flags)}"
+        if meta:
+            linha += f"  {_m(meta)}"
+        print(f"{linha}{' ' * pad}{desc}")
+        for b in bullets:
+            print(f"{'':>{COL}}{_d(b)}")
+        for ex in exs:
+            print(f"  {_d('$')} {_g(ex)}")
+        if exs or bullets:
+            print()
+
+    def _ex(cmd):
+        print(f"  {_d('$')} {_g(cmd)}")
+
+    # ── Cabeçalho ────────────────────────────────────────────────────────────
+    borda = "─" * W
+    print(f"\n  {_b('llm-tts')}  {_d('·')}  TTS Português BR")
+    print(f"  {_d('26 vozes · 6 idiomas · cache · fila assíncrona · API REST')}")
+    print(f"\n  {_d(borda)}")
+
+    # ── Sintaxe ───────────────────────────────────────────────────────────────
+    print(f"\n  {_c('SINTAXE')}\n")
+    print(f"  {_w('python tts_ptbr.py')} {_d('[opções]')} {_y('[texto]')}")
+    print(f"  {_d('echo \"texto\" |')} {_w('python tts_ptbr.py')} {_d('[opções]')}")
+    print(f"  {_w('python tts_ptbr.py')}  {_d('← modo interativo (sem argumentos)')}")
+    print()
+
+    # ── Engine e voz ──────────────────────────────────────────────────────────
+    _sep("ENGINE E VOZ")
+    print()
+    _opt("-e, --engine", "edge|pocket", f"Engine TTS  {_d('(padrão: edge)')}",
+         bullets=["edge   → online, vozes Microsoft neural PT-BR",
+                  "pocket → local, modelo Kyutai (~500 MB, offline após 1º download)"],
+         exs=["python tts_ptbr.py -e pocket \"Olá!\"",
+              "python tts_ptbr.py --engine pocket --idioma en \"Hello world\""])
+
+    _opt("-v, --voz", "NOME", "Voz a utilizar",
+         bullets=["edge:   francisca* · antonio · thalita",
+                  "pocket: rafael* · george · cosette · alba · eve · mary · ...",
+                  "pocket: caminho para .safetensors ou .wav (voz clonada)"],
+         exs=["python tts_ptbr.py --voz antonio \"Boa tarde!\"",
+              "python tts_ptbr.py -e pocket --voz george --idioma en \"Hello!\"",
+              "python tts_ptbr.py -e pocket --voz vozes/minha_voz.safetensors \"Texto\""])
+
+    _opt("    --idioma", "LANG", f"[pocket] Idioma do modelo  {_d('(padrão: pt)')}",
+         bullets=["pt · en · fr · de · it · es"],
+         exs=["python tts_ptbr.py -e pocket --idioma fr --voz cosette \"Bonjour!\"",
+              "python tts_ptbr.py -e pocket --idioma de --voz juergen \"Guten Tag!\""])
+
+    _opt("    --listar-vozes", "", "Lista vozes embutidas do engine selecionado",
+         exs=["python tts_ptbr.py --listar-vozes",
+              "python tts_ptbr.py -e pocket --listar-vozes"])
+
+    # ── Saída de áudio ────────────────────────────────────────────────────────
+    _sep("SAÍDA DE ÁUDIO")
+    print()
+    _opt("    --salvar", "ARQUIVO", "Salva o áudio gerado  (sem path → output/)",
+         bullets=["extensões: .wav  .flac  .ogg  .mp3"],
+         exs=["python tts_ptbr.py --salvar saida.wav \"Olá!\"",
+              "python tts_ptbr.py --salvar /tmp/audio.mp3 --sem-reproduzir \"Texto\""])
+
+    _opt("    --formato", "FMT", f"Formato explícito  {_d('(padrão: inferido pela extensão)')}",
+         bullets=["wav · flac · ogg · mp3"],
+         exs=["python tts_ptbr.py --salvar saida --formato mp3 \"Olá!\""])
+
+    _opt("    --sample-rate", "HZ", "Taxa de amostragem de saída em Hz",
+         exs=["python tts_ptbr.py --salvar hq.flac --sample-rate 44100 \"Olá!\"",
+              "python tts_ptbr.py --salvar asr.wav  --sample-rate 16000 \"Texto\""])
+
+    _opt("    --sem-reproduzir", "", f"Salva sem reproduzir  {_d('(requer --salvar)')}",
+         exs=["python tts_ptbr.py --salvar saida.wav --sem-reproduzir \"Texto\""])
+
+    # ── Entrada ───────────────────────────────────────────────────────────────
+    _sep("ENTRADA DE TEXTO")
+    print()
+    _opt("    --arquivo", "TXT", "Arquivo com uma frase por linha (batch)",
+         exs=["python tts_ptbr.py --arquivo frases.txt --salvar frase.wav",
+              "python tts_ptbr.py --arquivo frases.txt --salvar ep.wav --juntar"])
+
+    _opt("    --juntar", "", f"Concatena frases em um único arquivo  {_d('(requer --salvar)')}",
+         exs=["cat frases.txt | python tts_ptbr.py --salvar completo.wav --juntar"])
+
+    _opt("    --clipboard", "", "Lê o texto do clipboard em vez de argumento",
+         exs=["python tts_ptbr.py --clipboard",
+              "python tts_ptbr.py --clipboard --engine pocket --voz george --idioma en"])
+
+    # ── Processamento ─────────────────────────────────────────────────────────
+    _sep("PROCESSAMENTO")
+    print()
+    _opt("-p, --preprocessar", "", "Expande abreviações, moeda, ordinais e números (PT-BR)",
+         bullets=["R$ 1.250,50 → mil duzentos e cinquenta reais e cinquenta centavos",
+                  "3º lugar   → terceiro lugar",
+                  "Dr. Silva  → Doutor Silva",
+                  "98,5%      → noventa e oito vírgula cinco por cento"],
+         exs=["python tts_ptbr.py -p \"R$ 1.250,00 — 3º lugar, Dr. Silva\""])
+
+    _opt("    --velocidade", "N", f"Velocidade de fala 0.1–4.0  {_d('(padrão: 1.0)')}",
+         bullets=["< 1.0 → mais lento · > 1.0 → mais rápido  (afeta pitch)"],
+         exs=["python tts_ptbr.py --velocidade 0.75 \"Leitura didática\"",
+              "python tts_ptbr.py --velocidade 1.5  \"Notificação rápida\""])
+
+    _opt("    --streaming", "", "[pocket] Reproduz em tempo real enquanto gera",
+         bullets=["menor latência em textos longos · incompatível com --salvar"],
+         exs=["python tts_ptbr.py -e pocket --streaming \"Texto longo aqui...\""])
+
+    # ── Clonagem de voz ───────────────────────────────────────────────────────
+    _sep("CLONAGEM DE VOZ  [pocket]")
+    print()
+    _opt("    --clonar-voz", "ARQUIVO", "[pocket] Áudio de referência para clonagem  (requer HF_TOKEN)",
+         exs=["python tts_ptbr.py -e pocket --clonar-voz minha_voz.wav \"Texto\""])
+
+    _opt("    --exportar-voz", "DESTINO", "[pocket] Exporta voice state para .safetensors",
+         bullets=["arquivo exportado funciona sem login em qualquer máquina"],
+         exs=["python tts_ptbr.py -e pocket --clonar-voz ref.wav --exportar-voz vozes/voz.safetensors",
+              "python tts_ptbr.py -e pocket --voz vozes/voz.safetensors \"Reutilizando\""])
+
+    # ── Cache ─────────────────────────────────────────────────────────────────
+    _sep("CACHE DE ÁUDIO")
+    print()
+    _opt("    --sem-cache", "", "Força nova síntese ignorando o cache",
+         exs=["python tts_ptbr.py --sem-cache \"Texto\""])
+
+    _opt("    --limpar-cache", "", "Remove todos os áudios em cache e sai",
+         exs=["python tts_ptbr.py --limpar-cache"])
+
+    # ── Configuração ──────────────────────────────────────────────────────────
+    _sep("CONFIGURAÇÃO")
+    print()
+    _opt("    --salvar-config", "", "Persiste os parâmetros atuais em config.yaml e sai",
+         bullets=["campos salvos: engine · voz · idioma · velocidade · formato",
+                  "             streaming · preprocessar · sample_rate · cache_max"],
+         exs=["python tts_ptbr.py --engine pocket --idioma en --voz george --salvar-config"])
+
+    # ── Exemplos completos ────────────────────────────────────────────────────
+    _sep("EXEMPLOS COMPLETOS")
+    print()
+    casos = [
+        ("Falar e salvar em MP3",
+         "python tts_ptbr.py --salvar podcast.mp3 --sem-reproduzir \"Bom dia, ouvintes!\""),
+        ("Batch: converter arquivo → arquivos numerados",
+         "python tts_ptbr.py --arquivo frases.txt --salvar frase.wav"),
+        ("Batch: juntar tudo em um único WAV",
+         "python tts_ptbr.py --arquivo frases.txt --salvar episodio.wav --juntar"),
+        ("Pocket TTS em francês com velocidade",
+         "python tts_ptbr.py -e pocket --idioma fr --voz cosette --velocidade 0.9 \"Bonjour!\""),
+        ("Pré-processar + salvar em FLAC 44 kHz",
+         "python tts_ptbr.py -p --salvar saida.flac --sample-rate 44100 \"Dr. Ana, R$ 500,00\""),
+        ("Clipboard → falar com Antonio",
+         "python tts_ptbr.py --clipboard --voz antonio"),
+        ("Definir pocket+inglês+george como padrões",
+         "python tts_ptbr.py -e pocket --idioma en --voz george --salvar-config"),
+        ("Modo interativo",
+         "python tts_ptbr.py"),
+        ("Servidor REST",
+         "uvicorn server.server:app --host 0.0.0.0 --port 8080"),
+    ]
+    for titulo, cmd in casos:
+        print(f"  {_d('·')} {titulo}")
+        print(f"    {_d('$')} {_g(cmd)}")
+        print()
+
+    print(f"  {_d(borda)}")
+    print(f"  {_d('Documentação completa:')}  docs/index.md\n")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # CLI
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -859,50 +1052,13 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(
         description="TTS Português BR",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-exemplos:
-  Falar e salvar em WAV:
-    python tts_ptbr.py --salvar saida.wav "Olá, mundo!"
-
-  Falar 1,5× mais rápido:
-    python tts_ptbr.py --velocidade 1.5 "Texto mais rápido"
-
-  Pocket TTS em inglês com voz alba:
-    python tts_ptbr.py --engine pocket --idioma en --voz alba "Hello world"
-
-  Pocket TTS com streaming em tempo real:
-    python tts_ptbr.py --engine pocket --streaming "Texto aqui"
-
-  Pré-processar texto antes de falar:
-    python tts_ptbr.py --preprocessar "R$ 1.250,00 — 3º lugar, Dr. Silva"
-
-  Ler de arquivo de texto (uma frase por linha):
-    python tts_ptbr.py --arquivo frases.txt --salvar frase.wav
-
-  Ler de arquivo e juntar em um único áudio:
-    python tts_ptbr.py --arquivo frases.txt --salvar completo.wav --juntar
-
-  Ler do stdin via pipe:
-    echo "Olá mundo" | python tts_ptbr.py
-    cat frases.txt | python tts_ptbr.py --salvar saida.wav --juntar
-
-  Falar o texto do clipboard:
-    python tts_ptbr.py --clipboard
-    python tts_ptbr.py --clipboard --engine pocket --voz george --idioma en
-
-  Forçar nova síntese (ignorar cache):
-    python tts_ptbr.py --sem-cache "Texto"
-
-  Limpar cache de áudio:
-    python tts_ptbr.py --limpar-cache
-
-  Salvar configuração padrão:
-    python tts_ptbr.py --engine pocket --idioma en --salvar-config
-
-  Exportar voice state para reuso:
-    python tts_ptbr.py --engine pocket --clonar-voz minha_voz.wav --exportar-voz minha_voz.safetensors
-        """,
+        add_help=False,
+    )
+    parser.add_argument(
+        "-h", "--help",
+        action="store_true",
+        default=False,
+        help=argparse.SUPPRESS,
     )
     parser.add_argument("texto", nargs="*", help="Texto para converter em voz")
     parser.add_argument(
@@ -1024,6 +1180,10 @@ exemplos:
         pass
 
     args = parser.parse_args()
+
+    if args.help:
+        _imprimir_ajuda()
+        raise SystemExit(0)
 
     if args.sem_reproduzir and not args.salvar:
         parser.error("--sem-reproduzir requer --salvar")
