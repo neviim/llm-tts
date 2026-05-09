@@ -660,6 +660,17 @@ def _aplicar_velocidade(data: np.ndarray, velocidade: float) -> np.ndarray:
     return scipy_resample(data, n_target).astype(data.dtype)
 
 
+_NORM_TARGET = 0.90
+
+def _normalizar(data: np.ndarray) -> np.ndarray:
+    pico = np.abs(data).max()
+    if pico < 1e-6:
+        return data
+    if pico >= _NORM_TARGET:
+        return data
+    return (data * (_NORM_TARGET / pico)).astype(data.dtype)
+
+
 def _inferir_formato(caminho: str, formato_explicito: str | None) -> str:
     if formato_explicito:
         fmt = formato_explicito.lower()
@@ -685,6 +696,8 @@ def _processar_saida(
 
     if velocidade != 1.0:
         data_saida = _aplicar_velocidade(data_saida, velocidade)
+
+    data_saida = _normalizar(data_saida)
 
     if salvar:
         fmt = _inferir_formato(salvar, formato)

@@ -16,6 +16,7 @@ from tts_ptbr import (
     _ler_textos_stdin,
     _ler_token_env,
     _aplicar_velocidade,
+    _normalizar,
     _processar_saida,
     _cache_key,
     _cache_buscar,
@@ -308,6 +309,35 @@ class TestAplicarVelocidade:
         data = np.ones(100, dtype=np.float32)
         result = _aplicar_velocidade(data, 200.0)
         assert len(result) >= 1
+
+
+# ── _normalizar ───────────────────────────────────────────────────────────────
+
+class TestNormalizar:
+    def test_audio_baixo_e_amplificado(self):
+        data = np.ones(100, dtype=np.float32) * 0.005
+        result = _normalizar(data)
+        assert np.abs(result).max() == pytest.approx(0.90, rel=1e-4)
+
+    def test_audio_ja_alto_nao_e_alterado(self):
+        data = np.ones(100, dtype=np.float32) * 0.95
+        result = _normalizar(data)
+        np.testing.assert_array_equal(result, data)
+
+    def test_audio_no_limite_nao_e_alterado(self):
+        data = np.ones(100, dtype=np.float32) * 0.90
+        result = _normalizar(data)
+        np.testing.assert_array_equal(result, data)
+
+    def test_silencio_nao_levanta_erro(self):
+        data = np.zeros(100, dtype=np.float32)
+        result = _normalizar(data)
+        np.testing.assert_array_equal(result, data)
+
+    def test_preserva_dtype(self):
+        data = np.ones(100, dtype=np.float32) * 0.01
+        result = _normalizar(data)
+        assert result.dtype == np.float32
 
 
 # ── _processar_saida ──────────────────────────────────────────────────────────
