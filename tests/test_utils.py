@@ -4,6 +4,8 @@ import pytest
 import numpy as np
 from unittest.mock import patch
 
+import io
+import sys
 import tts_ptbr
 from tts_ptbr import (
     _inferir_formato,
@@ -11,7 +13,10 @@ from tts_ptbr import (
     _resample,
     _concatenar_audio,
     _ler_textos_arquivo,
+    _ler_textos_stdin,
     _ler_token_env,
+    _aplicar_velocidade,
+    _processar_saida,
     _cache_key,
     _cache_buscar,
     _cache_salvar,
@@ -254,6 +259,114 @@ class TestCacheLimpar:
     def test_limpar_cache_vazio(self, tmp_path, monkeypatch):
         monkeypatch.setattr(tts_ptbr, "CACHE_DIR", tmp_path / "cache_vazio")
         assert _cache_limpar() == 0
+
+
+# ── _ler_textos_stdin ─────────────────────────────────────────────────────────
+
+class TestLerTextoStdin:
+    def test_leitura_basica(self):
+        with patch("tts_ptbr.sys.stdin", io.StringIO("Linha 1\nLinha 2\nLinha 3\n")):
+            assert _ler_textos_stdin() == ["Linha 1", "Linha 2", "Linha 3"]
+
+    def test_ignora_linhas_vazias(self):
+        with patch("tts_ptbr.sys.stdin", io.StringIO("Linha 1\n\nLinha 2\n")):
+            assert _ler_textos_stdin() == ["Linha 1", "Linha 2"]
+
+    def test_remove_espacos_nas_bordas(self):
+        with patch("tts_ptbr.sys.stdin", io.StringIO("  Texto  \n")):
+            assert _ler_textos_stdin() == ["Texto"]
+
+    def test_stdin_vazio(self):
+        with patch("tts_ptbr.sys.stdin", io.StringIO("")):
+            assert _ler_textos_stdin() == []
+
+
+# ── _aplicar_velocidade ───────────────────────────────────────────────────────
+
+class TestAplicarVelocidade:
+    def test_velocidade_um_retorna_original(self):
+        data = np.ones(100, dtype=np.float32)
+        result = _aplicar_velocidade(data, 1.0)
+        np.testing.assert_array_equal(result, data)
+
+    def test_dobrar_velocidade_reduz_amostras_pela_metade(self):
+        data = np.ones(100, dtype=np.float32)
+        result = _aplicar_velocidade(data, 2.0)
+        assert len(result) == 50
+
+    def test_metade_velocidade_dobra_amostras(self):
+        data = np.ones(100, dtype=np.float32)
+        result = _aplicar_velocidade(data, 0.5)
+        assert len(result) == 200
+
+    def test_preserva_dtype(self):
+        data = np.ones(100, dtype=np.float32)
+        result = _aplicar_velocidade(data, 1.5)
+        assert result.dtype == np.float32
+
+    def test_velocidade_muito_alta_nao_retorna_vazio(self):
+        data = np.ones(100, dtype=np.float32)
+        result = _aplicar_velocidade(data, 200.0)
+        assert len(result) >= 1
+
+
+# ── _processar_saida ──────────────────────────────────────────────────────────
+
+AUDIO_FAKE_PS = np.zeros(22050, dtype=np.float32)
+SR_FAKE_PS = 22050
+
+
+class TestProcessarSaida:
+    def test_salva_arquivo_wav(self, tmp_path):
+        destino = str(tmp_path / "saida.wav")
+        with patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"):
+            _processar_saida(AUDIO_FAKE_PS, SR_FAKE_PS, salvar=destino, reproduzir=False)
+        assert (tmp_path / "saida.wav").exists()
+
+    def test_velocidade_altera_tamanho(self, tmp_path):
+        destino = str(tmp_path / "rapido.wav")
+        with patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"):
+            _processar_saida(AUDIO_FAKE_PS, SR_FAKE_PS, salvar=destino, velocidade=2.0, reproduzir=False)
+        import soundfile as sf
+        data, _ = sf.read(destino)
+        assert len(data) == pytest.approx(len(AUDIO_FAKE_PS) / 2, rel=0.05)
+
+    def test_sample_rate_saida_reamostrado(self, tmp_path):
+        destino = str(tmp_path / "44k.wav")
+        with patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"):
+            _processar_saida(AUDIO_FAKE_PS, SR_FAKE_PS, salvar=destino, sample_rate_saida=44100, reproduzir=False)
+        import soundfile as sf
+        data, sr = sf.read(destino)
+        assert sr == 44100
+        assert len(data) == pytest.approx(len(AUDIO_FAKE_PS) * 2, rel=0.05)
+
+    def test_reproduzir_chama_sd_play(self):
+        with patch("tts_ptbr.sd.play") as mock_play, patch("tts_ptbr.sd.wait"):
+            _processar_saida(AUDIO_FAKE_PS, SR_FAKE_PS, reproduzir=True)
+        mock_play.assert_called_once()
+
+    def test_sem_reproduzir_nao_chama_sd_play(self, tmp_path):
+        destino = str(tmp_path / "s.wav")
+        with patch("tts_ptbr.sd.play") as mock_play, patch("tts_ptbr.sd.wait"):
+            _processar_saida(AUDIO_FAKE_PS, SR_FAKE_PS, salvar=destino, reproduzir=False)
+        mock_play.assert_not_called()
+
+
+# ── _cache_stats ──────────────────────────────────────────────────────────────
+
+class TestCacheStats:
+    def test_cache_vazio_retorna_mensagem(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(tts_ptbr, "CACHE_DIR", tmp_path / "cache_vazio")
+        monkeypatch.setattr(tts_ptbr, "CACHE_INDEX", tmp_path / "cache_vazio" / "index.json")
+        assert _cache_stats() == "Cache vazio."
+
+    def test_cache_com_entrada_conta_corretamente(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(tts_ptbr, "CACHE_DIR", tmp_path / "cache")
+        monkeypatch.setattr(tts_ptbr, "CACHE_INDEX", tmp_path / "cache" / "index.json")
+        _cache_salvar("edge", "francisca", "pt", "Olá", AUDIO_FAKE, SR_FAKE)
+        stats = _cache_stats()
+        assert "1 entrada" in stats
+        assert "MB" in stats
 
 
 class TestCacheCLI:
