@@ -529,6 +529,36 @@ llm-tts/
 
 ---
 
+## Roadmap — o que pode ser implementado
+
+### Engine pocket-tts
+
+| Funcionalidade | Status | Descrição |
+|---|---|---|
+| Catálogo completo de vozes | ✅ Implementado | 26 vozes com login HF (`--listar-vozes`) |
+| Outros idiomas | ✅ Implementado | `--idioma` com 6 línguas (pt, en, fr, de, es, it) |
+| `--velocidade <0.5–2.0>` | ✅ Implementado | Controle de velocidade de fala |
+| Streaming de áudio | ✅ Implementado | `--streaming` via `generate_audio_stream` |
+| Modo servidor | ✅ Implementado | FastAPI REST em `server/server.py` |
+
+### Produtividade
+
+| Funcionalidade | Status | Descrição |
+|---|---|---|
+| Histórico de áudio | ✅ Implementado | Cache em `.cache/tts_ptbr/` com LRU e `--limpar-cache` |
+| Leitura do clipboard | ✅ Implementado | `--clipboard` lê o conteúdo copiado |
+| Fila de frases | ✅ Implementado | `fila on` no modo interativo enfileira em background |
+
+### Interface
+
+| Funcionalidade | Status | Descrição |
+|---|---|---|
+| Barra de progresso | ✅ Implementado | `tqdm` automático no batch com fallback sem dependência |
+| Configuração via arquivo | ✅ Implementado | `config.yaml` com `--salvar-config` e defaults persistentes |
+| Shell completion | ✅ Implementado | `argcomplete` para bash/zsh |
+
+---
+
 ## Referências
 
 - [edge-tts](https://github.com/rany2/edge-tts)
