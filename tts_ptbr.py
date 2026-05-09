@@ -20,11 +20,14 @@ Uso:
 """
 
 import asyncio
+import hashlib
 import io
+import json
 import re
 import sys
 import argparse
 import logging
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -89,10 +92,18 @@ VOZ_POCKET_PADRAO = "rafael"
 FORMATOS_SUPORTADOS = {"wav", "flac", "ogg", "mp3"}
 DIR_OUTPUT = Path(__file__).parent / "output"
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
+CACHE_DIR = Path(__file__).parent / ".cache" / "tts_ptbr"
+CACHE_INDEX = CACHE_DIR / "index.json"
+CACHE_MAX_PADRAO = 50
+
 _CAMPOS_CONFIG = frozenset({
     "engine", "idioma", "voz", "velocidade",
-    "streaming", "preprocessar", "formato", "sample_rate",
+    "streaming", "preprocessar", "formato", "sample_rate", "cache_max",
 })
+
+# Estado do cache (configurável via CLI/config)
+_usar_cache: bool = True
+_cache_max: int = CACHE_MAX_PADRAO
 
 logging.basicConfig(level=logging.WARNING)
 
@@ -123,6 +134,88 @@ def _salvar_config(cfg: dict, caminho: Path = CONFIG_PATH) -> None:
         print("[config] pyyaml não instalado. Execute: uv pip install pyyaml")
     except Exception as e:
         print(f"[config] Erro ao salvar: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cache de áudio
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _cache_key(engine: str, voz: str, idioma: str, texto: str) -> str:
+    payload = f"{engine}:{voz}:{idioma}:{texto}"
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+
+def _cache_ler_index() -> dict:
+    if not CACHE_INDEX.exists():
+        return {}
+    try:
+        return json.loads(CACHE_INDEX.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _cache_escrever_index(index: dict) -> None:
+    CACHE_INDEX.parent.mkdir(parents=True, exist_ok=True)
+    CACHE_INDEX.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _cache_buscar(engine: str, voz: str, idioma: str, texto: str) -> tuple[np.ndarray, int] | None:
+    key = _cache_key(engine, voz, idioma, texto)
+    index = _cache_ler_index()
+    if key not in index:
+        return None
+    arquivo = CACHE_DIR / index[key]["arquivo"]
+    if not arquivo.exists():
+        return None
+    try:
+        data, sr = sf.read(str(arquivo))
+        return data.astype(np.float32), int(sr)
+    except Exception:
+        return None
+
+
+def _cache_salvar(engine: str, voz: str, idioma: str, texto: str, data: np.ndarray, sr: int) -> None:
+    key = _cache_key(engine, voz, idioma, texto)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    arquivo_nome = f"{key}.wav"
+    try:
+        sf.write(str(CACHE_DIR / arquivo_nome), data, sr, format="WAV")
+    except Exception:
+        return
+    index = _cache_ler_index()
+    index[key] = {
+        "engine": engine, "voz": voz, "idioma": idioma,
+        "texto": texto[:120],
+        "arquivo": arquivo_nome,
+        "criado": datetime.now().isoformat(),
+    }
+    if len(index) > _cache_max:
+        chaves = sorted(index, key=lambda k: index[k].get("criado", ""))
+        for chave_antiga in chaves[:len(index) - _cache_max]:
+            (CACHE_DIR / index[chave_antiga]["arquivo"]).unlink(missing_ok=True)
+            del index[chave_antiga]
+    _cache_escrever_index(index)
+
+
+def _cache_limpar() -> int:
+    if not CACHE_DIR.exists():
+        return 0
+    count = sum(1 for arq in CACHE_DIR.glob("*.wav") if arq.unlink() or True)
+    if CACHE_INDEX.exists():
+        CACHE_INDEX.unlink()
+    return count
+
+
+def _cache_stats() -> str:
+    index = _cache_ler_index()
+    if not index:
+        return "Cache vazio."
+    tamanho = sum(
+        (CACHE_DIR / e["arquivo"]).stat().st_size
+        for e in index.values()
+        if (CACHE_DIR / e["arquivo"]).exists()
+    )
+    return f"{len(index)} entrada(s) — {tamanho / 1_000_000:.1f} MB"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -554,9 +647,18 @@ def _sintetizar(
     fonte_voz: str,
     idioma: str = IDIOMA_POCKET_PADRAO,
 ) -> tuple[np.ndarray, int]:
+    if _usar_cache:
+        hit = _cache_buscar(engine, fonte_voz, idioma, texto)
+        if hit is not None:
+            print("[cache] Áudio encontrado no cache.")
+            return hit
     if engine == "pocket":
-        return _sintetizar_pocket(texto, fonte_voz, idioma)
-    return _sintetizar_edge(texto, fonte_voz)
+        data, sr = _sintetizar_pocket(texto, fonte_voz, idioma)
+    else:
+        data, sr = _sintetizar_edge(texto, fonte_voz)
+    if _usar_cache:
+        _cache_salvar(engine, fonte_voz, idioma, texto, data, sr)
+    return data, sr
 
 
 def _concatenar_audio(lista: list[tuple[np.ndarray, int]]) -> tuple[np.ndarray, int]:
@@ -673,6 +775,7 @@ def _voz_padrao(engine: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    global _usar_cache, _cache_max
     cfg = _carregar_config()
 
     parser = argparse.ArgumentParser(
@@ -708,6 +811,12 @@ exemplos:
   Falar o texto do clipboard:
     python tts_ptbr.py --clipboard
     python tts_ptbr.py --clipboard --engine pocket --voz george --idioma en
+
+  Forçar nova síntese (ignorar cache):
+    python tts_ptbr.py --sem-cache "Texto"
+
+  Limpar cache de áudio:
+    python tts_ptbr.py --limpar-cache
 
   Salvar configuração padrão:
     python tts_ptbr.py --engine pocket --idioma en --salvar-config
@@ -814,6 +923,16 @@ exemplos:
         action="store_true",
         help="Salva os parâmetros atuais como configuração padrão em config.yaml e sai",
     )
+    parser.add_argument(
+        "--sem-cache",
+        action="store_true",
+        help="Desativa o cache de áudio para esta execução (força re-síntese)",
+    )
+    parser.add_argument(
+        "--limpar-cache",
+        action="store_true",
+        help="Remove todos os áudios em cache e sai",
+    )
 
     _cfg_defaults = {k: v for k, v in cfg.items() if k in _CAMPOS_CONFIG}
     if _cfg_defaults:
@@ -827,6 +946,15 @@ exemplos:
         parser.error("--juntar requer --salvar")
     if args.velocidade <= 0:
         parser.error("--velocidade deve ser maior que 0")
+
+    _usar_cache = not args.sem_cache
+    _cache_max = int(cfg.get("cache_max", CACHE_MAX_PADRAO))
+
+    # ── Limpar cache ──────────────────────────────────────────────────────────
+    if args.limpar_cache:
+        n = _cache_limpar()
+        print(f"[cache] {n} entrada(s) removida(s).")
+        return
 
     # ── Salvar configuração ───────────────────────────────────────────────────
     if args.salvar_config:
@@ -967,7 +1095,7 @@ exemplos:
     print(_status())
     print("Comandos: engine, idioma, voz, velocidade, preprocessar, streaming, salvar,")
     print("          formato, sample-rate, sem-reproduzir, exportar, clonar,")
-    print("          clipboard, config salvar, config ver, status, sair")
+    print("          clipboard, cache ver, cache limpar, config salvar, config ver, status, sair")
     print()
 
     while True:
@@ -1139,6 +1267,22 @@ exemplos:
                 )
             except (RuntimeError, FileNotFoundError, ValueError) as e:
                 print(f"[erro] {e}")
+            continue
+
+        if cmd == "cache":
+            if arg == "ver":
+                print(_cache_stats())
+            elif arg == "limpar":
+                n = _cache_limpar()
+                print(f"[cache] {n} entrada(s) removida(s).")
+            elif arg in ("on", ""):
+                _usar_cache = True
+                print("[cache] Ativado.")
+            elif arg == "off":
+                _usar_cache = False
+                print("[cache] Desativado.")
+            else:
+                print("Use: cache ver  |  cache limpar  |  cache on  |  cache off")
             continue
 
         if cmd == "config":

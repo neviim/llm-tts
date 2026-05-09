@@ -2,6 +2,7 @@
 import os
 import pytest
 import numpy as np
+from unittest.mock import patch
 
 import tts_ptbr
 from tts_ptbr import (
@@ -11,6 +12,12 @@ from tts_ptbr import (
     _concatenar_audio,
     _ler_textos_arquivo,
     _ler_token_env,
+    _cache_key,
+    _cache_buscar,
+    _cache_salvar,
+    _cache_limpar,
+    _cache_stats,
+    CACHE_DIR,
 )
 
 
@@ -172,3 +179,99 @@ class TestLerTokenEnv:
         env_file.write_text("HF_TOKEN=hf_file\n", encoding="utf-8")
         monkeypatch.setattr(tts_ptbr, "_ENV_PATH", env_file)
         assert _ler_token_env() == "hf_env"
+
+
+# ── Cache de áudio ────────────────────────────────────────────────────────────
+
+AUDIO_FAKE = np.zeros(22050, dtype=np.float32)
+SR_FAKE = 22050
+
+
+class TestCacheKey:
+    def test_mesmos_args_mesma_chave(self):
+        k1 = _cache_key("edge", "francisca", "pt", "Olá")
+        k2 = _cache_key("edge", "francisca", "pt", "Olá")
+        assert k1 == k2
+
+    def test_texto_diferente_chave_diferente(self):
+        k1 = _cache_key("edge", "francisca", "pt", "Olá")
+        k2 = _cache_key("edge", "francisca", "pt", "Tchau")
+        assert k1 != k2
+
+    def test_engine_diferente_chave_diferente(self):
+        k1 = _cache_key("edge", "francisca", "pt", "Olá")
+        k2 = _cache_key("pocket", "francisca", "pt", "Olá")
+        assert k1 != k2
+
+    def test_voz_diferente_chave_diferente(self):
+        k1 = _cache_key("edge", "francisca", "pt", "Olá")
+        k2 = _cache_key("edge", "antonio", "pt", "Olá")
+        assert k1 != k2
+
+    def test_tamanho_fixo(self):
+        assert len(_cache_key("edge", "francisca", "pt", "Olá")) == 16
+
+
+class TestCacheSalvarBuscar:
+    def test_salvar_e_buscar_roundtrip(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(tts_ptbr, "CACHE_DIR", tmp_path / "cache")
+        monkeypatch.setattr(tts_ptbr, "CACHE_INDEX", tmp_path / "cache" / "index.json")
+        _cache_salvar("edge", "francisca", "pt", "Olá", AUDIO_FAKE, SR_FAKE)
+        resultado = _cache_buscar("edge", "francisca", "pt", "Olá")
+        assert resultado is not None
+        data, sr = resultado
+        assert sr == SR_FAKE
+        assert len(data) == len(AUDIO_FAKE)
+
+    def test_miss_retorna_none(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(tts_ptbr, "CACHE_DIR", tmp_path / "cache")
+        monkeypatch.setattr(tts_ptbr, "CACHE_INDEX", tmp_path / "cache" / "index.json")
+        assert _cache_buscar("edge", "francisca", "pt", "Texto novo") is None
+
+    def test_limite_remove_mais_antigo(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(tts_ptbr, "CACHE_DIR", tmp_path / "cache")
+        monkeypatch.setattr(tts_ptbr, "CACHE_INDEX", tmp_path / "cache" / "index.json")
+        monkeypatch.setattr(tts_ptbr, "_cache_max", 2)
+        _cache_salvar("edge", "francisca", "pt", "Texto 1", AUDIO_FAKE, SR_FAKE)
+        _cache_salvar("edge", "francisca", "pt", "Texto 2", AUDIO_FAKE, SR_FAKE)
+        _cache_salvar("edge", "francisca", "pt", "Texto 3", AUDIO_FAKE, SR_FAKE)
+        from tts_ptbr import _cache_ler_index
+        index = _cache_ler_index()
+        assert len(index) == 2
+        # Texto 1 (o mais antigo) deve ter sido removido
+        assert _cache_buscar("edge", "francisca", "pt", "Texto 1") is None
+
+
+class TestCacheLimpar:
+    def test_limpar_remove_arquivos(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(tts_ptbr, "CACHE_DIR", tmp_path / "cache")
+        monkeypatch.setattr(tts_ptbr, "CACHE_INDEX", tmp_path / "cache" / "index.json")
+        _cache_salvar("edge", "francisca", "pt", "Olá", AUDIO_FAKE, SR_FAKE)
+        n = _cache_limpar()
+        assert n == 1
+        assert _cache_buscar("edge", "francisca", "pt", "Olá") is None
+
+    def test_limpar_cache_vazio(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(tts_ptbr, "CACHE_DIR", tmp_path / "cache_vazio")
+        assert _cache_limpar() == 0
+
+
+class TestCacheCLI:
+    def _mock_edge(self):
+        return patch("tts_ptbr._sintetizar_edge", return_value=(AUDIO_FAKE, SR_FAKE))
+
+    def test_sem_cache_nao_busca(self):
+        with patch("sys.argv", ["tts_ptbr.py", "--sem-cache", "Olá"]), \
+             self._mock_edge(), \
+             patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"), \
+             patch("tts_ptbr._cache_buscar") as mock_buscar:
+            from tts_ptbr import main
+            main()
+        mock_buscar.assert_not_called()
+
+    def test_limpar_cache_cli(self):
+        with patch("sys.argv", ["tts_ptbr.py", "--limpar-cache"]), \
+             patch("tts_ptbr._cache_limpar", return_value=3) as mock_limpar:
+            from tts_ptbr import main
+            main()
+        mock_limpar.assert_called_once()

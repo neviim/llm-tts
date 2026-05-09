@@ -113,6 +113,30 @@ echo "Olá, mundo!" | .venv/bin/python tts_ptbr.py
 cat frases.txt | .venv/bin/python tts_ptbr.py --salvar saida.wav --juntar
 ```
 
+### Cache de áudio (`--sem-cache`, `--limpar-cache`)
+
+Áudios sintetizados são armazenados em `.cache/tts_ptbr/` e reutilizados automaticamente quando o mesmo texto, engine e voz forem solicitados novamente.
+
+```bash
+# Segunda chamada retorna instantaneamente do cache
+.venv/bin/python tts_ptbr.py "Olá, mundo!"
+.venv/bin/python tts_ptbr.py "Olá, mundo!"   # → [cache] Áudio encontrado no cache.
+
+# Forçar nova síntese
+.venv/bin/python tts_ptbr.py --sem-cache "Olá, mundo!"
+
+# Limpar todos os áudios em cache
+.venv/bin/python tts_ptbr.py --limpar-cache
+```
+
+O tamanho máximo do cache (padrão: 50 entradas) pode ser configurado no `config.yaml`:
+
+```yaml
+cache_max: 100
+```
+
+No modo interativo: `cache ver` (estatísticas), `cache limpar`, `cache on/off`.
+
 ### Falar o texto do clipboard (`--clipboard`)
 
 ```bash
@@ -274,6 +298,9 @@ Comandos disponíveis:
 | `velocidade <N>`                 | Velocidade de fala (0.1–4.0, padrão 1.0)          |
 | `streaming [on\|off]`            | [pocket] Ativa/desativa reprodução em streaming   |
 | `clipboard`                      | Lê e fala o conteúdo do clipboard                 |
+| `cache ver`                      | Mostra estatísticas do cache (entradas e tamanho) |
+| `cache limpar`                   | Remove todos os áudios em cache                   |
+| `cache on\|off`                  | Ativa/desativa o cache para a sessão              |
 | `config salvar`                  | Persiste as configurações da sessão em config.yaml |
 | `config ver`                     | Exibe o conteúdo atual do config.yaml             |
 | `sem-reproduzir`                 | Alterna entre salvar-e-reproduzir / só salvar     |
@@ -307,6 +334,8 @@ Comandos disponíveis:
 | `--velocidade N`       |        | Velocidade de fala (0.1–4.0, padrão 1.0)                        |
 | `--streaming`          |        | [pocket] Reproduz em tempo real enquanto gera                   |
 | `--clipboard`          |        | Lê o texto do clipboard em vez de argumento ou stdin            |
+| `--sem-cache`          |        | Desativa o cache de áudio para esta execução                    |
+| `--limpar-cache`       |        | Remove todos os áudios em cache e sai                           |
 | `--salvar-config`      |        | Persiste os parâmetros atuais em `config.yaml` e sai            |
 | `--preprocessar`       | `-p`   | Expande abreviações, moeda, ordinais, siglas e números (PT-BR)  |
 | `--juntar`             |        | Concatena todas as frases num único áudio — requer `--salvar`   |
@@ -443,7 +472,6 @@ curl -s -X POST http://localhost:8080/tts \
 
 | Funcionalidade | Descrição |
 |---|---|
-| Histórico de áudio | Cache dos últimos N áudios gerados para não re-sintetizar textos repetidos |
 | Fila de frases | Enfileirar múltiplas entradas no modo interativo sem esperar cada reprodução |
 
 ### Interface
