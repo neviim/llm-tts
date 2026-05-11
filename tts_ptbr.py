@@ -759,6 +759,14 @@ def _ler_textos_stdin() -> list[str]:
     return [l.strip() for l in sys.stdin.read().splitlines() if l.strip()]
 
 
+def _ler_arquivo_inteiro(caminho: str) -> str:
+    return " ".join(Path(caminho).read_text(encoding="utf-8").split())
+
+
+def _ler_stdin_inteiro() -> str:
+    return " ".join(sys.stdin.read().split())
+
+
 def processar_batch(
     textos: list[str],
     engine: str,
@@ -969,6 +977,14 @@ def _imprimir_ajuda() -> None:
          exs=["python tts_ptbr.py --arquivo frases.txt --salvar frase.wav",
               "python tts_ptbr.py --arquivo frases.txt --salvar ep.wav --juntar"])
 
+    _opt("    --ler-arquivo", "TXT", "Lê o arquivo INTEIRO como um único texto (não batch)",
+         bullets=["quebras de linha viram espaço — bom para parágrafos, capítulos, posts"],
+         exs=["python tts_ptbr.py --ler-arquivo capitulo.txt",
+              "python tts_ptbr.py --ler-arquivo post.md --salvar post.wav -p"])
+
+    _opt("    --stdin-inteiro", "", "Lê todo o stdin como um único texto (em vez de batch)",
+         exs=["cat artigo.txt | python tts_ptbr.py --stdin-inteiro --salvar artigo.mp3"])
+
     _opt("    --juntar", "", f"Concatena frases em um único arquivo  {_d('(requer --salvar)')}",
          exs=["cat frases.txt | python tts_ptbr.py --salvar completo.wav --juntar"])
 
@@ -1148,6 +1164,17 @@ def main() -> None:
         help="Arquivo de texto com uma frase por linha",
     )
     parser.add_argument(
+        "--ler-arquivo",
+        metavar="TXT",
+        default=None,
+        help="Lê o arquivo INTEIRO como um único texto contínuo (quebras de linha viram espaço)",
+    )
+    parser.add_argument(
+        "--stdin-inteiro",
+        action="store_true",
+        help="Lê todo o stdin como um único texto contínuo (em vez de uma frase por linha)",
+    )
+    parser.add_argument(
         "--preprocessar", "-p",
         action="store_true",
         help="Expande abreviações, moeda, porcentagem, ordinais, siglas e números",
@@ -1270,7 +1297,8 @@ def main() -> None:
         fonte_voz = args.voz if args.voz in vozes else _voz_padrao(args.engine)
 
     # ── Apenas exportar voz (sem texto) ──────────────────────────────────────
-    if args.engine == "pocket" and args.exportar_voz and not args.texto and not args.arquivo:
+    if (args.engine == "pocket" and args.exportar_voz
+            and not args.texto and not args.arquivo and not args.ler_arquivo):
         exportar_voz_pocket(fonte_voz, args.exportar_voz, args.idioma)
         return
 
@@ -1288,6 +1316,23 @@ def main() -> None:
         args.texto = [texto_clip]
 
     # ── Coletar textos de arquivo ou stdin ────────────────────────────────────
+    if args.ler_arquivo:
+        texto = _ler_arquivo_inteiro(args.ler_arquivo)
+        if not texto:
+            print(f"[erro] Arquivo vazio: {args.ler_arquivo}")
+            sys.exit(1)
+        print(f"[{args.engine}] (arquivo) {texto[:70]}{'...' if len(texto) > 70 else ''}")
+        falar(
+            texto, args.engine, fonte_voz,
+            idioma=args.idioma,
+            preprocessar=args.preprocessar,
+            streaming=args.streaming,
+            **saida,
+        )
+        if args.engine == "pocket" and args.exportar_voz:
+            exportar_voz_pocket(fonte_voz, args.exportar_voz, args.idioma)
+        return
+
     if args.arquivo:
         textos = _ler_textos_arquivo(args.arquivo)
         processar_batch(textos, args.engine, fonte_voz, **saida_batch)
@@ -1296,10 +1341,23 @@ def main() -> None:
         return
 
     if not args.texto and not sys.stdin.isatty():
-        textos = _ler_textos_stdin()
-        if textos:
-            processar_batch(textos, args.engine, fonte_voz, **saida_batch)
-            return
+        if args.stdin_inteiro:
+            texto = _ler_stdin_inteiro()
+            if texto:
+                print(f"[{args.engine}] (stdin) {texto[:70]}{'...' if len(texto) > 70 else ''}")
+                falar(
+                    texto, args.engine, fonte_voz,
+                    idioma=args.idioma,
+                    preprocessar=args.preprocessar,
+                    streaming=args.streaming,
+                    **saida,
+                )
+                return
+        else:
+            textos = _ler_textos_stdin()
+            if textos:
+                processar_batch(textos, args.engine, fonte_voz, **saida_batch)
+                return
 
     # ── Frase direta ──────────────────────────────────────────────────────────
     if args.texto:
@@ -1366,7 +1424,7 @@ def main() -> None:
     print(_status())
     print("Comandos: engine, idioma, voz, velocidade, preprocessar, streaming, salvar,")
     print("          formato, sample-rate, sem-reproduzir, exportar, clonar,")
-    print("          fila on/off/ver/limpar, clipboard,")
+    print("          ler-arquivo <caminho>, fila on/off/ver/limpar, clipboard,")
     print("          cache ver/limpar/on/off, config salvar/ver, status, sair")
     print()
 
@@ -1574,6 +1632,35 @@ def main() -> None:
                 print("[cache] Desativado.")
             else:
                 print("Use: cache ver  |  cache limpar  |  cache on  |  cache off")
+            continue
+
+        if cmd == "ler-arquivo":
+            if not arg:
+                print("Use: ler-arquivo CAMINHO")
+                continue
+            try:
+                texto = _ler_arquivo_inteiro(arg)
+            except (FileNotFoundError, OSError) as e:
+                print(f"[erro] {e}")
+                continue
+            if not texto:
+                print(f"[erro] Arquivo vazio: {arg}")
+                continue
+            try:
+                print(f"[lendo] {arg} ({len(texto)} chars)")
+                falar(
+                    texto, engine_atual, voz_atual,
+                    idioma=idioma_atual,
+                    preprocessar=preprocessar_atual,
+                    salvar=salvar_atual,
+                    formato=formato_atual,
+                    sample_rate_saida=sr_atual,
+                    velocidade=velocidade_atual,
+                    reproduzir=reproduzir_atual,
+                    streaming=streaming_atual,
+                )
+            except (RuntimeError, FileNotFoundError, ValueError) as e:
+                print(f"[erro] {e}")
             continue
 
         if cmd == "config":

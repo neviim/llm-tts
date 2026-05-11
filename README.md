@@ -57,6 +57,8 @@ Requisitos: Python 3.10+, [`uv`](https://docs.astral.sh/uv/getting-started/insta
 | `--sample-rate HZ`     |        | Taxa de amostragem do arquivo de saída em Hz                           |
 | `--sem-reproduzir`     |        | Salva sem reproduzir — requer `--salvar`                               |
 | `--arquivo TXT`        |        | Arquivo de texto com uma frase por linha                               |
+| `--ler-arquivo TXT`    |        | Lê o arquivo INTEIRO como um único texto contínuo (não batch)          |
+| `--stdin-inteiro`      |        | Lê todo o stdin como um único texto contínuo (em vez de batch)         |
 | `--juntar`             |        | Concatena todas as frases num único arquivo — requer `--salvar`        |
 | `--clipboard`          |        | Lê o texto do clipboard em vez de argumento ou stdin                   |
 | `--sem-cache`          |        | Força nova síntese, ignorando o cache                                  |
@@ -207,11 +209,25 @@ Processa um arquivo com uma frase por linha. Com `tqdm` instalado, exibe barra d
 .venv/bin/python tts_ptbr.py --arquivo frases.txt --preprocessar --salvar saida.wav --juntar
 ```
 
+### Ler arquivo inteiro (`--ler-arquivo`)
+
+Diferente de `--arquivo` (uma frase por linha, batch), `--ler-arquivo` lê o
+conteúdo todo como um único bloco — quebras de linha viram espaço. Use para
+parágrafos, capítulos, posts e transcrições.
+
+```bash
+.venv/bin/python tts_ptbr.py --ler-arquivo capitulo.txt
+.venv/bin/python tts_ptbr.py --ler-arquivo post.md --salvar post.mp3 -p
+```
+
 ### Stdin via pipe
 
 ```bash
 echo "Olá, mundo!" | .venv/bin/python tts_ptbr.py
 cat frases.txt | .venv/bin/python tts_ptbr.py --salvar saida.wav --juntar
+
+# Stdin como um único texto contínuo (não batch)
+cat artigo.txt | .venv/bin/python tts_ptbr.py --stdin-inteiro --salvar artigo.mp3
 ```
 
 ---
@@ -380,6 +396,7 @@ Iniciado quando nenhum texto é fornecido. Mantém todas as configurações entr
 | `fila ver`                        | Mostra quantas frases estão pendentes                   |
 | `fila limpar`                     | Cancela as frases na fila                               |
 | `clipboard`                       | Lê e fala o conteúdo do clipboard                       |
+| `ler-arquivo <caminho>`           | Lê o arquivo INTEIRO como um único texto contínuo       |
 | `cache ver`                       | Estatísticas do cache (entradas e tamanho)              |
 | `cache limpar`                    | Remove todos os áudios em cache                         |
 | `cache on\|off`                   | Ativa/desativa o cache na sessão                        |

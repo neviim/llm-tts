@@ -96,6 +96,14 @@ Mostra o nome, resumo e as três formas de invocar o script:
   $ python tts_ptbr.py --arquivo frases.txt --salvar frase.wav
   $ python tts_ptbr.py --arquivo frases.txt --salvar ep.wav --juntar
 
+      --ler-arquivo  TXT        Lê o arquivo INTEIRO como um único texto (não batch)
+                                quebras de linha viram espaço — bom para parágrafos, capítulos, posts
+  $ python tts_ptbr.py --ler-arquivo capitulo.txt
+  $ python tts_ptbr.py --ler-arquivo post.md --salvar post.wav -p
+
+      --stdin-inteiro           Lê todo o stdin como um único texto (em vez de batch)
+  $ cat artigo.txt | python tts_ptbr.py --stdin-inteiro --salvar artigo.mp3
+
       --juntar                  Concatena frases em um único arquivo  (requer --salvar)
   $ cat frases.txt | python tts_ptbr.py --salvar completo.wav --juntar
 
@@ -188,6 +196,9 @@ Encerra o help com casos práticos prontos para copiar:
 
   · Batch: juntar tudo em um único WAV
     $ python tts_ptbr.py --arquivo frases.txt --salvar episodio.wav --juntar
+
+  · Ler um capítulo/post inteiro (parágrafos, sem batch)
+    $ python tts_ptbr.py --ler-arquivo capitulo.txt --salvar capitulo.wav -p
 
   · Pocket TTS em francês com velocidade
     $ python tts_ptbr.py -e pocket --idioma fr --voz cosette --velocidade 0.9 "Bonjour!"

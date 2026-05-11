@@ -14,6 +14,8 @@ from tts_ptbr import (
     _concatenar_audio,
     _ler_textos_arquivo,
     _ler_textos_stdin,
+    _ler_arquivo_inteiro,
+    _ler_stdin_inteiro,
     _ler_token_env,
     _aplicar_velocidade,
     _normalizar,
@@ -144,6 +146,44 @@ class TestLerTextos:
         arq = tmp_path / "frases.txt"
         arq.write_text("\n\n\n", encoding="utf-8")
         assert _ler_textos_arquivo(str(arq)) == []
+
+
+# ── _ler_arquivo_inteiro ──────────────────────────────────────────────────────
+
+class TestLerArquivoInteiro:
+    def test_junta_linhas_com_espaco(self, tmp_path):
+        arq = tmp_path / "texto.txt"
+        arq.write_text("Linha 1\nLinha 2\nLinha 3\n", encoding="utf-8")
+        assert _ler_arquivo_inteiro(str(arq)) == "Linha 1 Linha 2 Linha 3"
+
+    def test_paragrafo_quebrado(self, tmp_path):
+        arq = tmp_path / "texto.txt"
+        arq.write_text("Este é o primeiro parágrafo\nde um texto contínuo.\n", encoding="utf-8")
+        assert _ler_arquivo_inteiro(str(arq)) == "Este é o primeiro parágrafo de um texto contínuo."
+
+    def test_colapsa_linhas_vazias_e_espacos_multiplos(self, tmp_path):
+        arq = tmp_path / "texto.txt"
+        arq.write_text("Linha 1\n\n\nLinha 2\t\t  Linha 3\n", encoding="utf-8")
+        assert _ler_arquivo_inteiro(str(arq)) == "Linha 1 Linha 2 Linha 3"
+
+    def test_remove_espacos_nas_bordas(self, tmp_path):
+        arq = tmp_path / "texto.txt"
+        arq.write_text("  Texto com espaços nas bordas  \n", encoding="utf-8")
+        assert _ler_arquivo_inteiro(str(arq)) == "Texto com espaços nas bordas"
+
+    def test_arquivo_vazio(self, tmp_path):
+        arq = tmp_path / "texto.txt"
+        arq.write_text("", encoding="utf-8")
+        assert _ler_arquivo_inteiro(str(arq)) == ""
+
+    def test_arquivo_so_com_whitespace(self, tmp_path):
+        arq = tmp_path / "texto.txt"
+        arq.write_text("\n  \t\n   \n", encoding="utf-8")
+        assert _ler_arquivo_inteiro(str(arq)) == ""
+
+    def test_arquivo_inexistente_levanta_erro(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            _ler_arquivo_inteiro(str(tmp_path / "nao_existe.txt"))
 
 
 # ── _ler_token_env ────────────────────────────────────────────────────────────
@@ -280,6 +320,30 @@ class TestLerTextoStdin:
     def test_stdin_vazio(self):
         with patch("tts_ptbr.sys.stdin", io.StringIO("")):
             assert _ler_textos_stdin() == []
+
+
+# ── _ler_stdin_inteiro ────────────────────────────────────────────────────────
+
+class TestLerStdinInteiro:
+    def test_junta_linhas_com_espaco(self):
+        with patch("tts_ptbr.sys.stdin", io.StringIO("Linha 1\nLinha 2\nLinha 3\n")):
+            assert _ler_stdin_inteiro() == "Linha 1 Linha 2 Linha 3"
+
+    def test_colapsa_whitespace(self):
+        with patch("tts_ptbr.sys.stdin", io.StringIO("Linha 1\n\n\nLinha 2\t\tLinha 3\n")):
+            assert _ler_stdin_inteiro() == "Linha 1 Linha 2 Linha 3"
+
+    def test_remove_espacos_nas_bordas(self):
+        with patch("tts_ptbr.sys.stdin", io.StringIO("  Texto  \n")):
+            assert _ler_stdin_inteiro() == "Texto"
+
+    def test_stdin_vazio(self):
+        with patch("tts_ptbr.sys.stdin", io.StringIO("")):
+            assert _ler_stdin_inteiro() == ""
+
+    def test_stdin_so_com_whitespace(self):
+        with patch("tts_ptbr.sys.stdin", io.StringIO("\n\t  \n")):
+            assert _ler_stdin_inteiro() == ""
 
 
 # ── _aplicar_velocidade ───────────────────────────────────────────────────────

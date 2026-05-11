@@ -121,6 +121,86 @@ grep "NARRADOR:" roteiro.txt | sed 's/NARRADOR: //' | \
   .venv/bin/python tts_ptbr.py --salvar narrador.wav --juntar
 ```
 
+## Ler arquivo inteiro (`--ler-arquivo`)
+
+Diferente de `--arquivo` (que trata cada linha como uma frase separada em
+batch), `--ler-arquivo` lê o **conteúdo todo do arquivo** como um único bloco
+de texto. Quebras de linha viram espaço, e espaços/tabs múltiplos são
+colapsados — bom para parágrafos, capítulos, posts e transcrições.
+
+```bash
+# Ler um capítulo inteiro
+.venv/bin/python tts_ptbr.py --ler-arquivo capitulo.txt
+
+# Salvar como um único MP3, com pré-processamento PT-BR
+.venv/bin/python tts_ptbr.py --ler-arquivo post.md --salvar post.mp3 -p
+
+# Pocket TTS + streaming (reproduz enquanto gera)
+.venv/bin/python tts_ptbr.py -e pocket --streaming --ler-arquivo artigo.txt
+```
+
+**Quando usar `--arquivo` vs `--ler-arquivo`:**
+
+| Sua entrada | Use |
+|-------------|-----|
+| Uma frase por linha (legendas, falas) | `--arquivo` (batch) |
+| Texto contínuo (parágrafo, capítulo, post) | `--ler-arquivo` |
+
+Para stdin, o equivalente é `--stdin-inteiro`:
+
+```bash
+# Lê todo o stdin como um único texto (não batch)
+cat artigo.txt | .venv/bin/python tts_ptbr.py --stdin-inteiro --salvar artigo.mp3
+```
+
+### Comandos prontos (usando `referencia/texto1.txt`)
+
+Os exemplos abaixo assumem que você está em `/home/neviim/developer/llm-tts`
+(ou outro diretório raiz do projeto). Existem três formas de invocar o Python:
+
+```bash
+# (a) Caminho do venv (sem precisar ativar)
+.venv/bin/python tts_ptbr.py ...
+
+# (b) Direto, se o venv já estiver ativo
+python tts_ptbr.py ...
+
+# (c) Caminhos absolutos — funciona de qualquer diretório
+/home/neviim/developer/llm-tts/.venv/bin/python \
+  /home/neviim/developer/llm-tts/tts_ptbr.py ...
+```
+
+Receitas práticas com o arquivo de referência:
+
+```bash
+# 1. Apenas falar (lê todo o arquivo como um texto contínuo)
+.venv/bin/python tts_ptbr.py --ler-arquivo referencia/texto1.txt
+
+# 2. Salvar em WAV no output/ (sem reproduzir)
+.venv/bin/python tts_ptbr.py --ler-arquivo referencia/texto1.txt \
+  --salvar texto1.wav --sem-reproduzir
+
+# 3. Salvar em MP3 com pré-processamento PT-BR
+#    (expande Dr., R$, %, números, ordinais, siglas...)
+.venv/bin/python tts_ptbr.py --ler-arquivo referencia/texto1.txt \
+  -p --salvar texto1.mp3 --sem-reproduzir
+
+# 4. Trocar voz (edge): antonio em vez de francisca
+.venv/bin/python tts_ptbr.py --ler-arquivo referencia/texto1.txt \
+  --voz antonio --salvar texto1.mp3
+
+# 5. Pocket TTS + streaming (reproduz em tempo real enquanto gera)
+.venv/bin/python tts_ptbr.py -e pocket --streaming \
+  --ler-arquivo referencia/texto1.txt
+
+# 6. Acelerar a leitura em 25%
+.venv/bin/python tts_ptbr.py --ler-arquivo referencia/texto1.txt \
+  --velocidade 1.25 --salvar texto1.wav
+```
+
+> Sem path em `--salvar` (ex.: `texto1.mp3`), o arquivo vai automaticamente
+> para `output/`.
+
 ## Velocidade de fala (`--velocidade`)
 
 Intervalo: `0.1` a `4.0`. Padrão: `1.0`. Funciona com qualquer engine.

@@ -47,8 +47,10 @@ Tudo relacionado a como e onde o áudio é entregue.
 - `--sample-rate` — taxa de amostragem de saída (16 kHz, 44.1 kHz, etc.)
 - `--sem-reproduzir` — gerar sem tocar o áudio
 - `--arquivo` — batch a partir de arquivo `.txt` (uma frase por linha)
+- `--ler-arquivo` — ler arquivo INTEIRO como um único texto contínuo (parágrafos, capítulos)
 - `--juntar` — concatenar todas as frases em um único arquivo
 - Stdin via pipe (`echo` / `cat`)
+- `--stdin-inteiro` — stdin como um único texto contínuo (em vez de batch)
 - `--velocidade` — de 0.1× a 4.0× com exemplos práticos
 - `--streaming` — reprodução em tempo real com latência reduzida (pocket)
 
@@ -141,6 +143,8 @@ API HTTP com FastAPI para integração com outras aplicações.
 | `--sample-rate` | | [saida-audio.md](saida-audio.md) |
 | `--sem-reproduzir` | | [saida-audio.md](saida-audio.md) |
 | `--arquivo` | | [saida-audio.md](saida-audio.md) |
+| `--ler-arquivo` | | [saida-audio.md](saida-audio.md) |
+| `--stdin-inteiro` | | [saida-audio.md](saida-audio.md) |
 | `--juntar` | | [saida-audio.md](saida-audio.md) |
 | `--velocidade` | | [saida-audio.md](saida-audio.md) |
 | `--streaming` | | [saida-audio.md](saida-audio.md) |

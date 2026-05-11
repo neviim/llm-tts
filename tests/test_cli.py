@@ -1,4 +1,5 @@
 """Testes para validação de argumentos CLI e integração com mocks."""
+import io
 import sys
 import pytest
 import numpy as np
@@ -264,3 +265,112 @@ class TestBatchTqdm:
                 reproduzir=False,
             )
         assert len(list(tmp_path.glob("f_*.wav"))) == 2
+
+
+# ── --ler-arquivo (arquivo inteiro como bloco único) ──────────────────────────
+
+class TestLerArquivo:
+    def _mock_edge(self):
+        return patch("tts_ptbr._sintetizar_edge", return_value=(AUDIO_FAKE, SR_FAKE))
+
+    def test_envia_texto_inteiro_como_bloco(self, tmp_path):
+        arq = tmp_path / "texto.txt"
+        arq.write_text("Linha 1\nLinha 2\nLinha 3\n", encoding="utf-8")
+        with patch("sys.argv", ["tts_ptbr.py", "--ler-arquivo", str(arq)]), \
+             self._mock_edge() as mock_edge, \
+             patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"):
+            main()
+        texto_enviado = mock_edge.call_args[0][0]
+        assert texto_enviado == "Linha 1 Linha 2 Linha 3"
+
+    def test_quebras_e_paragrafos_viram_espaco(self, tmp_path):
+        arq = tmp_path / "texto.txt"
+        arq.write_text("Primeiro parágrafo.\n\nSegundo parágrafo.\n", encoding="utf-8")
+        with patch("sys.argv", ["tts_ptbr.py", "--ler-arquivo", str(arq)]), \
+             self._mock_edge() as mock_edge, \
+             patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"):
+            main()
+        assert mock_edge.call_args[0][0] == "Primeiro parágrafo. Segundo parágrafo."
+
+    def test_arquivo_vazio_sai_com_erro(self, tmp_path):
+        arq = tmp_path / "vazio.txt"
+        arq.write_text("\n\n  \n", encoding="utf-8")
+        with patch("sys.argv", ["tts_ptbr.py", "--ler-arquivo", str(arq)]), \
+             self._mock_edge(), \
+             patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"), \
+             pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 1
+
+    def test_salva_arquivo_unico(self, tmp_path):
+        arq = tmp_path / "texto.txt"
+        arq.write_text("Capítulo um.\nEra uma vez.\n", encoding="utf-8")
+        destino = tmp_path / "saida.wav"
+        with patch("sys.argv",
+                   ["tts_ptbr.py", "--ler-arquivo", str(arq),
+                    "--salvar", str(destino), "--sem-reproduzir"]), \
+             self._mock_edge(), \
+             patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"):
+            main()
+        assert destino.exists()
+        # Não deve gerar arquivos numerados (não é batch)
+        assert not list(tmp_path.glob("saida_*.wav"))
+
+    def test_preprocessar_aplicado_ao_texto_inteiro(self, tmp_path):
+        arq = tmp_path / "texto.txt"
+        arq.write_text("Dr. Silva\ntem 50%\nde acerto.\n", encoding="utf-8")
+        with patch("sys.argv", ["tts_ptbr.py", "--ler-arquivo", str(arq), "-p"]), \
+             self._mock_edge() as mock_edge, \
+             patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"):
+            main()
+        texto_enviado = mock_edge.call_args[0][0]
+        assert "Doutor" in texto_enviado
+        assert "por cento" in texto_enviado
+
+    def test_nao_chama_processar_batch(self, tmp_path):
+        arq = tmp_path / "texto.txt"
+        arq.write_text("Linha 1\nLinha 2\n", encoding="utf-8")
+        with patch("sys.argv", ["tts_ptbr.py", "--ler-arquivo", str(arq)]), \
+             self._mock_edge(), \
+             patch("tts_ptbr.processar_batch") as mock_batch, \
+             patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"):
+            main()
+        mock_batch.assert_not_called()
+
+
+# ── --stdin-inteiro (stdin como bloco único) ──────────────────────────────────
+
+class TestStdinInteiro:
+    def _mock_edge(self):
+        return patch("tts_ptbr._sintetizar_edge", return_value=(AUDIO_FAKE, SR_FAKE))
+
+    def test_envia_stdin_como_bloco(self):
+        with patch("sys.argv", ["tts_ptbr.py", "--stdin-inteiro"]), \
+             patch("tts_ptbr.sys.stdin", io.StringIO("Linha 1\nLinha 2\nLinha 3\n")), \
+             patch("tts_ptbr.sys.stdin.isatty", return_value=False), \
+             self._mock_edge() as mock_edge, \
+             patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"):
+            main()
+        assert mock_edge.call_args[0][0] == "Linha 1 Linha 2 Linha 3"
+
+    def test_stdin_sem_flag_continua_batch(self):
+        with patch("sys.argv", ["tts_ptbr.py"]), \
+             patch("tts_ptbr.sys.stdin", io.StringIO("Linha 1\nLinha 2\n")), \
+             patch("tts_ptbr.sys.stdin.isatty", return_value=False), \
+             self._mock_edge(), \
+             patch("tts_ptbr.processar_batch") as mock_batch, \
+             patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"):
+            main()
+        mock_batch.assert_called_once()
+        textos_arg = mock_batch.call_args[0][0]
+        assert textos_arg == ["Linha 1", "Linha 2"]
+
+    def test_stdin_inteiro_nao_chama_processar_batch(self):
+        with patch("sys.argv", ["tts_ptbr.py", "--stdin-inteiro"]), \
+             patch("tts_ptbr.sys.stdin", io.StringIO("Linha 1\nLinha 2\n")), \
+             patch("tts_ptbr.sys.stdin.isatty", return_value=False), \
+             self._mock_edge(), \
+             patch("tts_ptbr.processar_batch") as mock_batch, \
+             patch("tts_ptbr.sd.play"), patch("tts_ptbr.sd.wait"):
+            main()
+        mock_batch.assert_not_called()

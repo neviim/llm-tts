@@ -257,6 +257,7 @@ Cache:          on
 | `fila ver` | | Frases pendentes |
 | `fila limpar` | | Cancela a fila |
 | `clipboard` | | Lê e fala o clipboard |
+| `ler-arquivo <caminho>` | `ler-arquivo capitulo.txt` | Lê o arquivo INTEIRO como um único texto (parágrafos, posts) |
 | `cache ver` | | Estatísticas do cache |
 | `cache on\|off` | `cache off` | Ativa/desativa cache |
 | `cache limpar` | | Esvazia o cache |
