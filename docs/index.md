@@ -16,11 +16,11 @@ Consulte o help diretamente no terminal antes de qualquer outra coisa.
 ### [1.2 Instalação](instalacao.md)
 Configure o ambiente antes de qualquer coisa.
 
-- Criar ambiente virtual com `uv`
-- Instalar dependências (`requirements.txt`)
-- Verificar a instalação com `--listar-vozes`
+- `bash install.sh` — instalador automático (recomendado)
+- Cria `.venv` Python 3.12, instala dependências e configura o comando `lts`
+- `--reinstalar` — recria o `.venv` do zero
 - Configurar token HuggingFace para vozes extras (pocket)
-- Instalar dependências opcionais do servidor REST
+- Instalação manual passo a passo como alternativa
 
 ---
 

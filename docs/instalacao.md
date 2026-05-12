@@ -1,66 +1,149 @@
 # Instalação
 
-## Requisitos
+## Instalação automática (recomendada)
 
-- Python 3.10 ou superior
-- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) — gerenciador de pacotes rápido
-
-## Passo a passo
+O script `install.sh` cuida de tudo: cria o ambiente virtual, instala todas as
+dependências e configura o comando `lts` disponível globalmente no terminal.
 
 ```bash
 # 1. Clonar o repositório
 git clone <repositório> llm-tts
 cd llm-tts
 
-# 2. Criar ambiente virtual com Python 3.12
-uv venv .venv --python 3.12
-
-# 3. Instalar dependências
-uv pip install -r requirements.txt
+# 2. Executar o instalador
+bash install.sh
 ```
 
-## Verificar instalação
+Ao final, recarregue o terminal (ou execute `source ~/.bashrc`) e use:
 
 ```bash
+lts "Olá, mundo!"
+lts --help
+```
+
+---
+
+## O que o instalador faz
+
+| Etapa | Descrição |
+|---|---|
+| Verificação | Confirma Python 3.12+ no sistema |
+| `.venv` | Cria ambiente virtual isolado com `uv` (ou `python -m venv` como fallback) |
+| Dependências | Instala `requirements.txt` completo dentro do `.venv` |
+| `output/` | Garante que o diretório de saída de áudio existe |
+| Wrapper `lts` | Cria `~/.local/bin/lts` apontando para o Python do `.venv` |
+| PATH | Adiciona `~/.local/bin` ao `~/.bashrc` (ou `~/.zshrc`) se necessário |
+| Verificação | Confirma que os pacotes principais foram instalados corretamente |
+
+O comando `lts` funciona de qualquer diretório sem precisar ativar o `.venv`.
+
+---
+
+## Opções do instalador
+
+```
+bash install.sh [--reinstalar]
+```
+
+| Flag | Descrição |
+|---|---|
+| *(sem flags)* | Mantém o `.venv` existente, reinstala dependências e recria o wrapper |
+| `--reinstalar` | Remove e recria o `.venv` do zero |
+
+---
+
+## Requisitos do sistema
+
+- **Python 3.12+** — versão mínima exigida
+- **`uv`** (opcional, recomendado) — instalação significativamente mais rápida
+
+Se `uv` não estiver disponível o instalador usa `pip`/`venv` automaticamente.
+
+### Instalar uv
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### Instalar Python 3.12 (Ubuntu/Debian)
+
+```bash
+sudo add-apt-repository ppa:deadsnakes/ppa
+sudo apt install python3.12 python3.12-venv
+```
+
+---
+
+## Instalação manual (alternativa)
+
+Se preferir controle total sobre cada etapa:
+
+```bash
+# 1. Criar ambiente virtual
+uv venv .venv --python 3.12
+# ou: python3.12 -m venv .venv
+
+# 2. Instalar dependências
+uv pip install --python .venv/bin/python -r requirements.txt
+# ou: .venv/bin/pip install -r requirements.txt
+
+# 3. Verificar
 .venv/bin/python tts_ptbr.py --listar-vozes
 ```
 
-Saída esperada:
+Para ter o comando `lts` disponível globalmente, crie o wrapper manualmente:
 
+```bash
+mkdir -p ~/.local/bin
+cat > ~/.local/bin/lts <<'EOF'
+#!/usr/bin/env bash
+exec "/caminho/para/llm-tts/.venv/bin/python" "/caminho/para/llm-tts/tts_ptbr.py" "$@"
+EOF
+chmod +x ~/.local/bin/lts
+
+# Garantir que ~/.local/bin está no PATH
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
 ```
-Vozes disponíveis (engine: edge)
-  francisca  pt-BR-FranciscaNeural  [padrão]
-  antonio    pt-BR-AntonioNeural
-  thalita    pt-BR-ThalitaNeural
-```
+
+---
 
 ## Token HuggingFace (pocket TTS — vozes extras)
 
-Necessário apenas para as 25 vozes adicionais do engine `pocket`. A voz `rafael` funciona sem login.
+Necessário apenas para as 25 vozes adicionais do engine `pocket`.
+A voz padrão `rafael` funciona sem qualquer login.
+
+Crie um arquivo `.env` na raiz do projeto:
 
 ```bash
-# Copiar o modelo de configuração
-cp .env.example .env
+echo "HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" > .env
 ```
 
-Edite o `.env` e insira o token:
+Obtenha o token em <https://huggingface.co/settings/tokens> e aceite os
+termos em <https://huggingface.co/kyutai/pocket-tts>.
 
-```
-HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-Obtenha o token em <https://huggingface.co/settings/tokens> e aceite os termos em <https://huggingface.co/kyutai/pocket-tts>.
+---
 
 ## Download do modelo pocket (automático no primeiro uso)
 
-```bash
-.venv/bin/python tts_ptbr.py --engine pocket "Olá"
-# Baixa ~500 MB uma única vez para ~/.cache/huggingface/
-```
-
-## Servidor REST (opcional)
+O modelo é baixado automaticamente (~500 MB) para `~/.cache/huggingface/`
+na primeira execução com `--engine pocket`:
 
 ```bash
-uv pip install fastapi uvicorn
-.venv/bin/uvicorn server.server:app --port 8080
+lts --engine pocket "Olá"
 ```
+
+As execuções seguintes usam o modelo em cache — sem download.
+
+---
+
+## Servidor REST
+
+O servidor REST já está incluído em `requirements.txt` (FastAPI + uvicorn).
+Para iniciá-lo após a instalação:
+
+```bash
+.venv/bin/uvicorn server.server:app --host 0.0.0.0 --port 8080
+```
+
+Documentação interativa disponível em `http://localhost:8080/docs`.
