@@ -25,9 +25,9 @@ Execute antes de instalar para garantir que o ambiente está apto.
 Configure o ambiente antes de qualquer coisa.
 
 - `bash install.sh` — instalador automático (recomendado)
-- Cria `.venv` Python 3.12, instala dependências e configura o comando `lts`
+- Cria `.venv` Python 3.12, instala `libportaudio2` (áudio), dependências e configura `lts`
 - `--reinstalar` — recria o `.venv` do zero
-- Configurar token HuggingFace para vozes extras (pocket)
+- Configurar token HuggingFace para o engine pocket
 - Instalação manual passo a passo como alternativa
 
 ---

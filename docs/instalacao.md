@@ -25,17 +25,37 @@ lts --help
 
 ## O que o instalador faz
 
-| Etapa | Descrição |
-|---|---|
-| Verificação | Confirma Python 3.12+ no sistema |
-| `.venv` | Cria ambiente virtual isolado com `uv` (ou `python -m venv` como fallback) |
-| Dependências | Instala `requirements.txt` completo dentro do `.venv` |
-| `output/` | Garante que o diretório de saída de áudio existe |
-| Wrapper `lts` | Cria `~/.local/bin/lts` apontando para o Python do `.venv` |
-| PATH | Adiciona `~/.local/bin` ao `~/.bashrc` (ou `~/.zshrc`) se necessário |
-| Verificação | Confirma que os pacotes principais foram instalados corretamente |
+| # | Etapa | Descrição |
+|---|---|---|
+| 1 | Python | Confirma Python 3.12+ no sistema |
+| 2 | `.venv` | Cria ambiente virtual isolado com `uv` (ou `python -m venv` como fallback) |
+| 3 | Áudio | Instala `libportaudio2` e `libasound2t64` via `apt` se ausentes — exigidas pelo `sounddevice` no Linux |
+| 4 | Dependências | Instala `requirements.txt` completo dentro do `.venv` |
+| 5 | `output/` | Garante que o diretório de saída de áudio existe |
+| 6 | Wrapper `lts` | Cria `~/.local/bin/lts` apontando para o Python do `.venv` |
+| 7 | PATH | Adiciona `~/.local/bin` ao `~/.bashrc` (ou `~/.zshrc`) se necessário |
+| 8 | Verificação | Confirma que os pacotes principais foram instalados corretamente |
+| 9 | HF Token | Copia `.env.example → .env` e exibe instruções de configuração se token ausente |
 
 O comando `lts` funciona de qualquer diretório sem precisar ativar o `.venv`.
+
+### Comportamento da etapa de áudio (etapa 3)
+
+O `sounddevice` no Linux **não embute** o PortAudio — ele precisa estar
+instalado no sistema. O instalador detecta e trata automaticamente:
+
+| Contexto | Comportamento |
+|---|---|
+| Executando como root (Docker, VPS) | Instala `libportaudio2` + `libasound2t64` sem interação |
+| Usuário comum com `sudo` | Exibe o comando e pede confirmação antes de instalar |
+| Sem `sudo` / sem `apt` | Exibe aviso com instrução manual |
+| Não é Debian/Ubuntu | Verifica via `ldconfig`; avisa se não detectado |
+
+Instalação manual se necessário:
+
+```bash
+sudo apt install libportaudio2 libasound2t64
+```
 
 ---
 
