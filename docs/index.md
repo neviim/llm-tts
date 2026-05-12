@@ -13,6 +13,14 @@ Consulte o help diretamente no terminal antes de qualquer outra coisa.
 - Layout com 8 seções coloridas: engine, saída, entrada, processamento, clonagem, cache, config, exemplos
 - Cores ANSI automáticas no terminal; texto limpo ao redirecionar para arquivo
 
+### [1.1b Validação do Sistema](check-system.md)
+Execute antes de instalar para garantir que o ambiente está apto.
+
+- `bash tools/check-system.sh` — relatório completo (10 categorias, 40+ verificações)
+- Detecta: Python, áudio, disco, RAM, rede, permissões, conflitos
+- Flags `--silencioso` e `--json` para uso em scripts e CI/CD
+- Instruções de correção para cada falha encontrada
+
 ### [1.2 Instalação](instalacao.md)
 Configure o ambiente antes de qualquer coisa.
 
