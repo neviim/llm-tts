@@ -108,15 +108,33 @@ source ~/.bashrc
 
 ---
 
-## Token HuggingFace (pocket TTS — vozes extras)
+## Token HuggingFace (engine pocket)
 
-Necessário apenas para as 25 vozes adicionais do engine `pocket`.
-A voz padrão `rafael` funciona sem qualquer login.
+O engine `pocket` usa o modelo gated `kyutai/pocket-tts` no HuggingFace.
+Um token válido é necessário para baixar o modelo no primeiro uso.
+O engine `edge` (padrão) funciona sem nenhuma configuração.
 
-Crie um arquivo `.env` na raiz do projeto:
+### Configuração automática pelo instalador
+
+O `install.sh` copia `.env.example → .env` automaticamente caso o arquivo
+não exista, e exibe um aviso ao final com os passos necessários:
+
+```
+┌─ Engine pocket requer HuggingFace Token ──────────────────────┐
+│  1. Obtenha seu token: https://huggingface.co/settings/tokens │
+│  2. Aceite os termos:  https://huggingface.co/kyutai/pocket-tts│
+│  3. Edite o arquivo:   .env                                   │
+│     Substitua: HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx   │
+└───────────────────────────────────────────────────────────────┘
+```
+
+### Configuração manual
+
+Edite o `.env` na raiz do projeto:
 
 ```bash
-echo "HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" > .env
+# .env
+HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 Obtenha o token em <https://huggingface.co/settings/tokens> e aceite os

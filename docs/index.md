@@ -16,7 +16,7 @@ Consulte o help diretamente no terminal antes de qualquer outra coisa.
 ### [1.1b Validação do Sistema](check-system.md)
 Execute antes de instalar para garantir que o ambiente está apto.
 
-- `bash tools/check-system.sh` — relatório completo (10 categorias, 40+ verificações)
+- `bash tools/check-system.sh` — relatório completo (11 categorias, 40+ verificações)
 - Detecta: Python, áudio, disco, RAM, rede, permissões, conflitos
 - Flags `--silencioso` e `--json` para uso em scripts e CI/CD
 - Instruções de correção para cada falha encontrada

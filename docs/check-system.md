@@ -102,7 +102,18 @@ Necessário apenas para a flag `--clipboard`.
 | Não executando dentro de um venv ativo | — |
 | `PIP_REQUIRE_VIRTUALENV` não conflitante | — |
 
-### 10 · Conflitos Potenciais
+### 10 · HuggingFace Token (engine pocket)
+| Verificação | Crítico |
+|---|:---:|
+| `HF_TOKEN` em variável de ambiente ou `.env` | — |
+| Token não é o valor placeholder (`hf_xxx...`) | — |
+
+O engine `edge` (padrão) funciona sem token. O engine `pocket` requer
+token válido para baixar o modelo gated `kyutai/pocket-tts`.
+
+Se ausente, o script exibe os 3 passos: obter token → aceitar termos → editar `.env`.
+
+### 11 · Conflitos Potenciais
 | Verificação | Crítico |
 |---|:---:|
 | Comando `lts` já existe no PATH | — |
