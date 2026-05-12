@@ -450,16 +450,26 @@ fi
 # ══════════════════════════════════════════════════════════════════════════════
 $SILENCIOSO || hdr "7 · Conectividade de Rede"
 
+_HAS_HTTP_CLIENT=false
+_cmd curl && _HAS_HTTP_CLIENT=true
+_cmd wget && _HAS_HTTP_CLIENT=true
+
+if ! $_HAS_HTTP_CLIENT; then
+    _fail "curl e wget ausentes — rede não pôde ser verificada e downloads auxiliares falharão"
+    _c "     ${_D}→ sudo apt install curl${_X}"
+fi
+
 _check_url() {
     local url="$1" label="$2" critical="${3:-false}"
     local code
+    if ! $_HAS_HTTP_CLIENT; then
+        # já reportado acima como falha; silencia checagens individuais
+        return
+    fi
     if _cmd curl; then
         code=$(curl -s --max-time 8 -o /dev/null -w "%{http_code}" "$url" 2>/dev/null)
-    elif _cmd wget; then
-        wget -q --timeout=8 --spider "$url" 2>/dev/null && code=200 || code=000
     else
-        _warn "curl/wget ausente — não foi possível verificar $label"
-        return
+        wget -q --timeout=8 --spider "$url" 2>/dev/null && code=200 || code=000
     fi
     if [ "${code:-000}" -ge 200 ] && [ "${code:-000}" -lt 400 ]; then
         _ok "Acessível: $label"
