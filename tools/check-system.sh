@@ -570,9 +570,67 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 10. CONFLITOS
+# 10. HUGGINGFACE TOKEN (engine pocket)
 # ══════════════════════════════════════════════════════════════════════════════
-$SILENCIOSO || hdr "10 · Conflitos Potenciais"
+$SILENCIOSO || hdr "10 · HuggingFace Token (engine pocket)"
+
+# O engine 'edge' (Microsoft TTS) funciona sem token.
+# O engine 'pocket' baixa o modelo kyutai/pocket-tts, que é gated:
+# exige aceitar os termos + HF_TOKEN válido no primeiro uso.
+
+_hf_token_ok=false
+_hf_token_fonte=""
+
+# 1. variável de ambiente
+if [ -n "${HF_TOKEN:-}" ]; then
+    # token presente mas pode ser o placeholder
+    if echo "${HF_TOKEN}" | grep -qv '^hf_xxx'; then
+        _hf_token_ok=true
+        _hf_token_fonte="variável de ambiente \$HF_TOKEN"
+    else
+        _warn "HF_TOKEN definido em \$HF_TOKEN mas parece ser o valor placeholder"
+    fi
+fi
+
+# 2. arquivo .env no projeto
+if ! $_hf_token_ok && [ -f "$SCRIPT_DIR/.env" ]; then
+    _token_val=$(grep -E '^HF_TOKEN=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d= -f2- | tr -d '"'"'" | tr -d ' ')
+    if [ -n "$_token_val" ] && echo "$_token_val" | grep -qv '^hf_xxx'; then
+        _hf_token_ok=true
+        _hf_token_fonte="arquivo .env"
+    elif [ -n "$_token_val" ]; then
+        _warn ".env encontrado mas HF_TOKEN ainda contém o valor placeholder — substitua pelo token real"
+        _c "     ${_D}→ edite .env e substitua hf_xxx... pelo seu token${_X}"
+        _c "     ${_D}→ token em: https://huggingface.co/settings/tokens${_X}"
+    else
+        _warn ".env encontrado mas sem HF_TOKEN definido"
+    fi
+fi
+
+if $_hf_token_ok; then
+    _ok "HF_TOKEN configurado (fonte: $_hf_token_fonte)"
+    _ok "Engine pocket disponível após aceitar termos em huggingface.co/kyutai/pocket-tts"
+else
+    # não é erro crítico — edge engine funciona sem token
+    if [ -f "$SCRIPT_DIR/.env.example" ] && [ ! -f "$SCRIPT_DIR/.env" ]; then
+        _warn "HF_TOKEN não configurado — engine pocket não funcionará sem ele"
+        _c "     ${_D}→ cp .env.example .env${_X}"
+        _c "     ${_D}→ edite .env: HF_TOKEN=hf_<seu_token>${_X}"
+        _c "     ${_D}→ obtenha o token: https://huggingface.co/settings/tokens${_X}"
+        _c "     ${_D}→ aceite os termos: https://huggingface.co/kyutai/pocket-tts${_X}"
+    elif [ ! -f "$SCRIPT_DIR/.env" ]; then
+        _warn "HF_TOKEN não configurado e .env.example ausente"
+        _c "     ${_D}→ crie .env com: HF_TOKEN=hf_<seu_token>${_X}"
+        _c "     ${_D}→ obtenha o token: https://huggingface.co/settings/tokens${_X}"
+        _c "     ${_D}→ aceite os termos: https://huggingface.co/kyutai/pocket-tts${_X}"
+    fi
+    _c "     ${_D}Nota: engine 'edge' (padrão) funciona sem token${_X}"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 11. CONFLITOS
+# ══════════════════════════════════════════════════════════════════════════════
+$SILENCIOSO || hdr "11 · Conflitos Potenciais"
 
 # Comando 'lts' já existe?
 if _cmd lts; then

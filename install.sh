@@ -165,7 +165,43 @@ else
     warn "Tente executar: uv pip install --python $VENV_DIR/bin/python $_missing"
 fi
 
-# ── 8. Resumo ─────────────────────────────────────────────────────────────────
+# ── 8. HuggingFace Token (engine pocket) ──────────────────────────────────────
+sep; echo
+
+_hf_configurado=false
+_hf_token_val=""
+
+# verifica .env existente
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    _hf_token_val=$(grep -E '^HF_TOKEN=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d= -f2- | tr -d '"'"'" | tr -d ' ')
+fi
+
+if [ -n "${HF_TOKEN:-}" ] && echo "${HF_TOKEN}" | grep -qv '^hf_xxx'; then
+    ok "HF_TOKEN detectado na variável de ambiente."
+    _hf_configurado=true
+elif [ -n "$_hf_token_val" ] && echo "$_hf_token_val" | grep -qv '^hf_xxx'; then
+    ok "HF_TOKEN configurado em .env."
+    _hf_configurado=true
+else
+    # .env não existe ou tem placeholder — criar a partir do .env.example
+    if [ ! -f "$SCRIPT_DIR/.env" ] && [ -f "$SCRIPT_DIR/.env.example" ]; then
+        cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
+        info ".env criado a partir de .env.example."
+    fi
+    echo -e "  ${YELLOW}┌─ Engine pocket requer HuggingFace Token ─────────────────────────┐${RESET}"
+    echo -e "  ${YELLOW}│${RESET}  O engine 'pocket' (TTS local/neural) usa um modelo gated no HF. ${YELLOW}│${RESET}"
+    echo -e "  ${YELLOW}│${RESET}  O engine 'edge' (padrão) funciona agora sem nenhuma configuração.${YELLOW}│${RESET}"
+    echo -e "  ${YELLOW}│${RESET}                                                                   ${YELLOW}│${RESET}"
+    echo -e "  ${YELLOW}│${RESET}  Para ativar o engine pocket:                                     ${YELLOW}│${RESET}"
+    echo -e "  ${YELLOW}│${RESET}  ${DIM}1. Obtenha seu token: https://huggingface.co/settings/tokens${RESET}   ${YELLOW}│${RESET}"
+    echo -e "  ${YELLOW}│${RESET}  ${DIM}2. Aceite os termos:  https://huggingface.co/kyutai/pocket-tts${RESET} ${YELLOW}│${RESET}"
+    echo -e "  ${YELLOW}│${RESET}  ${DIM}3. Edite o arquivo:   $SCRIPT_DIR/.env${RESET}"
+    echo -e "  ${YELLOW}│${RESET}  ${DIM}   Substitua: HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx${RESET}    ${YELLOW}│${RESET}"
+    echo -e "  ${YELLOW}└───────────────────────────────────────────────────────────────────┘${RESET}"
+    echo
+fi
+
+# ── 9. Resumo ─────────────────────────────────────────────────────────────────
 sep
 echo
 echo -e "  ${GREEN}${BOLD}Instalação concluída!${RESET}"
