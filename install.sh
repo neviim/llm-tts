@@ -88,7 +88,49 @@ else
     ok "Ambiente criado: $VENV_DIR"
 fi
 
-# ── 3. Dependências ───────────────────────────────────────────────────────────
+# ── 3. Bibliotecas de sistema (áudio) ────────────────────────────────────────
+# sounddevice no Linux não embute PortAudio — precisa de libportaudio2 instalada.
+sep; echo
+info "Verificando bibliotecas de sistema para áudio..."
+
+_libs_audio="libportaudio2 libasound2t64"
+_libs_faltando=""
+
+if command -v dpkg &>/dev/null; then
+    for _lib in $_libs_audio; do
+        dpkg -l "$_lib" 2>/dev/null | grep -q '^ii' || _libs_faltando="$_libs_faltando $_lib"
+    done
+    _libs_faltando="${_libs_faltando# }"
+
+    if [ -z "$_libs_faltando" ]; then
+        ok "Bibliotecas de áudio presentes (libportaudio2, libasound2t64)."
+    elif [ "$(id -u)" -eq 0 ]; then
+        info "Instalando bibliotecas de áudio como root: $_libs_faltando"
+        apt-get install -y $_libs_faltando -qq 2>/dev/null \
+            && ok "Bibliotecas instaladas: $_libs_faltando" \
+            || warn "Falha ao instalar $_libs_faltando — instale manualmente: sudo apt install $_libs_faltando"
+    elif command -v sudo &>/dev/null; then
+        warn "libportaudio2 ausente — sounddevice precisa dela para reproduzir áudio."
+        echo -e "  ${DIM}Instale com: sudo apt install $_libs_faltando${RESET}"
+        echo -e "  ${DIM}Pressione Enter para continuar sem ela, ou Ctrl+C para cancelar e instalar antes.${RESET}"
+        read -r _
+        info "Tentando instalar com sudo..."
+        sudo apt-get install -y $_libs_faltando -qq 2>/dev/null \
+            && ok "Bibliotecas instaladas." \
+            || warn "Não foi possível instalar. Execute manualmente: sudo apt install $_libs_faltando"
+    else
+        warn "libportaudio2 ausente — sounddevice não conseguirá reproduzir áudio."
+        warn "Execute após instalar: sudo apt install $_libs_faltando"
+    fi
+else
+    # não é Debian/Ubuntu — avisa mas não bloqueia
+    _ok_libs=false
+    command -v ldconfig &>/dev/null && ldconfig -p 2>/dev/null | grep -q libportaudio && _ok_libs=true
+    $_ok_libs && ok "libportaudio detectada via ldconfig." \
+              || warn "Não foi possível verificar libportaudio2 (apt não disponível)."
+fi
+
+# ── 4. Dependências Python ────────────────────────────────────────────────────
 sep; echo
 info "Instalando dependências de requirements.txt..."
 
@@ -100,11 +142,11 @@ fi
 
 ok "Dependências instaladas."
 
-# ── 4. Diretório de saída ─────────────────────────────────────────────────────
+# ── 5. Diretório de saída ─────────────────────────────────────────────────────
 mkdir -p "$SCRIPT_DIR/output"
 ok "Diretório output/ pronto."
 
-# ── 5. Wrapper executável ─────────────────────────────────────────────────────
+# ── 6. Wrapper executável ─────────────────────────────────────────────────────
 sep; echo
 mkdir -p "$BIN_DIR"
 
@@ -116,7 +158,7 @@ WRAPPER
 chmod +x "$WRAPPER"
 ok "Comando '${BOLD}$ALIAS_CMD${RESET}' criado em $WRAPPER"
 
-# ── 6. PATH no shell RC ───────────────────────────────────────────────────────
+# ── 7. PATH no shell RC ───────────────────────────────────────────────────────
 _path_line='export PATH="$HOME/.local/bin:$PATH"'
 _shell_rc=""
 
@@ -146,7 +188,7 @@ else
     echo -e "       ${DIM}$_path_line${RESET}"
 fi
 
-# ── 7. Verificação rápida ─────────────────────────────────────────────────────
+# ── 8. Verificação rápida ─────────────────────────────────────────────────────
 sep; echo
 info "Verificando instalação..."
 
@@ -165,7 +207,7 @@ else
     warn "Tente executar: uv pip install --python $VENV_DIR/bin/python $_missing"
 fi
 
-# ── 8. HuggingFace Token (engine pocket) ──────────────────────────────────────
+# ── 9. HuggingFace Token (engine pocket) ──────────────────────────────────────
 sep; echo
 
 _hf_configurado=false
@@ -201,7 +243,7 @@ else
     echo
 fi
 
-# ── 9. Resumo ─────────────────────────────────────────────────────────────────
+# ── 10. Resumo ────────────────────────────────────────────────────────────────
 sep
 echo
 echo -e "  ${GREEN}${BOLD}Instalação concluída!${RESET}"
